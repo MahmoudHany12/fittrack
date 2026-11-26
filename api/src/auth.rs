@@ -194,10 +194,10 @@ pub struct RefreshRequest {
 #[derive(sqlx::FromRow)]
 struct UserRow {
     id: Uuid,
-    email: String,
     password_hash: String,
-    created_at: DateTime<Utc>,
 }
+
+type RefreshRow = (Uuid, Uuid, DateTime<Utc>, Option<DateTime<Utc>>);
 
 fn normalize_email(email: &str) -> String {
     email.trim().to_lowercase()
@@ -233,12 +233,10 @@ async fn login(
     ValidatedJson(req): ValidatedJson<LoginRequest>,
 ) -> Result<Json<TokenResponse>, AppError> {
     let email = normalize_email(&req.email);
-    let user = sqlx::query_as::<_, UserRow>(
-        "SELECT id, email, password_hash, created_at FROM users WHERE email = $1",
-    )
-    .bind(&email)
-    .fetch_optional(&state.pool)
-    .await?;
+    let user = sqlx::query_as::<_, UserRow>("SELECT id, password_hash FROM users WHERE email = $1")
+        .bind(&email)
+        .fetch_optional(&state.pool)
+        .await?;
     let hash = match &user {
         Some(u) => u.password_hash.clone(),
         None => dummy_hash().await,
@@ -257,7 +255,7 @@ async fn refresh(
     ValidatedJson(req): ValidatedJson<RefreshRequest>,
 ) -> Result<Json<TokenResponse>, AppError> {
     let mut tx = state.pool.begin().await?;
-    let row: Option<(Uuid, Uuid, DateTime<Utc>, Option<DateTime<Utc>>)> = sqlx::query_as(
+    let row: Option<RefreshRow> = sqlx::query_as(
         "SELECT id, user_id, expires_at, revoked_at FROM refresh_tokens \
          WHERE token_hash = $1 FOR UPDATE",
     )

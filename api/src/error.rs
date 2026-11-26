@@ -32,7 +32,12 @@ impl From<validator::ValidationErrors> for AppError {
         let fields = e
             .field_errors()
             .into_iter()
-            .map(|(k, v)| (k.to_string(), v.iter().map(|x| x.code.to_string()).collect()))
+            .map(|(k, v)| {
+                (
+                    k.to_string(),
+                    v.iter().map(|x| x.code.to_string()).collect(),
+                )
+            })
             .collect();
         AppError::Validation(fields)
     }
