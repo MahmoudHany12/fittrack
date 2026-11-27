@@ -32,3 +32,12 @@
 | 2026-11-27 | Both need native code: a development build (EAS or `expo run:*`), not Expo Go. Config plugins added to `mobile/app.json` (plus `expo-build-properties` for Android minSdk 26 and `react-native-nitro-modules`) | Expo Go cannot load them. Native modules are lazy-required behind `src/health/provider.ts`, so Expo Go, web and jest get a no-op provider |
 | 2026-11-27 | Consent is per category (steps, workouts, sleep), default off, enforced server-side; revoking stops future imports but keeps imported data | Health data is sensitive; the user deletes data through the normal screens. Payloads are never logged |
 | 2026-11-27 | Steps are stored once per local day (`steps-YYYY-MM-DD`), updated if the count grows; workouts/sleep dedupe by (user, source, external_id) | Idempotent re-sync; no minute-level data |
+
+## Release prep (2026-11-27)
+| Date | Decision | Why |
+|---|---|---|
+| 2026-11-27 | First on-device use via Expo Go against the PC backend over Wi-Fi | No paid Apple Developer account yet; HealthKit needs a native build (TestFlight) |
+| 2026-11-27 | Workout kind stored in `workouts.kind`; daily steps via HealthKit statistics / Health Connect aggregates with `steps-YYYY-MM-DD` ids | Fixes kind-in-note and phone+watch double counting |
+| 2026-11-27 | Offline: add screens and Home merge unsynced local rows; pending edits may double-count until synced | Simple, visible offline behaviour |
+| 2026-11-27 | History rewritten to remove a wrong git identity; stale merged branches deleted | Owner request. GitHub keeps old PR refs (refs/pull/*) which only GitHub support can purge |
+| 2026-11-27 | release/v1 and release/v2 point at the same code; v1 = `FEATURES` empty, v2 = `FEATURES=stats,friends,leaderboard,chat` | v2 features are flag-gated by design |
