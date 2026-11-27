@@ -4,6 +4,7 @@ pub mod error;
 pub mod extract;
 pub mod food;
 pub mod profile;
+pub mod readiness;
 pub mod sleep;
 pub mod weight;
 pub mod workouts;
