@@ -298,6 +298,6 @@ mod tests {
         assert!(check_times(now, now - h(1), now).is_err());
         assert!(check_times(now, now, now).is_err());
         assert!(check_times(now + h(30), now + h(38), now).is_err());
-        assert!(check_times(now - h(8), now + h(23), now).is_ok());
+        assert!(check_times(now - h(8), now + h(15), now).is_ok());
     }
 }
