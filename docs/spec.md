@@ -62,3 +62,8 @@ TLS terminates at a reverse proxy in front of the API (see README); Postgres vol
 
 ### Friends (v2, flag `friends`)
 `POST /friends/invites` -> `{code, link, expires_at}`; `POST /friends/invites/{code}/accept`; `GET /friends`; `DELETE /friends/{user_id}`; `PUT /friends/{user_id}/share` `{enabled}` (weekly summary consent; default off; revoke any time); `GET /friends/{user_id}/summary` returns 403 unless that friend has an active grant to the caller.
+
+### POST /sync (offline sync, last write wins)
+Request `{ since: ISO|null, changes: { workouts[], sleep[], weight[], food_logs[] } }` (max 500 rows/table). Each change has `id` (client UUID), `updated_at` (client clock, clamped to server time), `deleted` (soft delete) and the row's fields (workouts carry `sets[]`). Applied only if strictly newer than the stored row; ties keep the server; foreign ids are ignored; invalid rows are listed in `rejected` without blocking others.
+Response `{ server_time, has_more, applied:{table:{applied,ignored}}, rejected:[{table,id,reason}], changes:{...rows with deleted flag + synced_at} }`.
+Client protocol: keep a local SQLite outbox of unsent changes; on reconnect POST them with `since = last_server_time - 5s`; apply returned rows (newer `updated_at` wins locally too); if `has_more`, repeat with `since = server_time`; store `server_time`.
