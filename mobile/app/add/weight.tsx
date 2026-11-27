@@ -3,7 +3,8 @@ import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 
 import { getProfile, profileKeys } from '@/api/profile';
-import { logWeight, newId, parseWeightInput, unitLabel, weightKeys } from '@/api/weight';
+import { newId, parseWeightInput, unitLabel, weightKeys } from '@/api/weight';
+import { saveWeight } from '@/sync/store';
 import { Body, Button, Caption, Field, Screen, Title } from '@/components/ui';
 
 export default function AddWeight() {
@@ -17,7 +18,7 @@ export default function AddWeight() {
   const id = useRef(newId());
 
   const save = useMutation({
-    mutationFn: (kg: number) => logWeight({ id: id.current, kg }),
+    mutationFn: (kg: number) => saveWeight({ id: id.current, kg }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: weightKeys.all });
       router.back();

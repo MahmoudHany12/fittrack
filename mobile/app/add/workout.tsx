@@ -9,13 +9,13 @@ import {
   MUSCLE_GROUPS,
   clamp,
   createExercise,
-  createWorkout,
   listWorkouts,
   newId,
   searchExercises,
   type Exercise,
   type MuscleGroup,
 } from '@/api/workouts';
+import { saveWorkout } from '@/sync/store';
 import { Card } from '@/components/Card';
 import { Body, Button, Caption, Field, Screen, Title } from '@/components/ui';
 import { fontSizes, radius, spacing, useTheme } from '@/theme';
@@ -177,7 +177,7 @@ export default function AddWorkout() {
 
   const save = useMutation({
     mutationFn: () =>
-      createWorkout({
+      saveWorkout({
         id: workoutId.current,
         started_at: new Date().toISOString(),
         duration_s: clamp(durationMin * 60, LIMITS.duration_s.min, LIMITS.duration_s.max),

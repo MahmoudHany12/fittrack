@@ -11,6 +11,17 @@ import {
 
 import * as api from '@/api/client';
 import { loadTokens } from '@/api/tokens';
+import { stopEngine } from '@/sync/engine';
+import { clearLocalData } from '@/sync/store';
+
+async function wipeLocal() {
+  stopEngine();
+  try {
+    await clearLocalData();
+  } catch {
+    // nothing local to clear (or storage unavailable): signing out must still work
+  }
+}
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
 
@@ -29,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     api.setSignedOutHandler(() => {
+      void wipeLocal();
       queryClient.clear();
       setStatus('signedOut');
     });
@@ -54,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await api.logout();
+    await wipeLocal();
     queryClient.clear();
     setStatus('signedOut');
   }, [queryClient]);
