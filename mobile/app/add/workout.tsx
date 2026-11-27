@@ -16,6 +16,8 @@ import {
   type MuscleGroup,
 } from '@/api/workouts';
 import { saveWorkout } from '@/sync/store';
+import { LOCAL_KEY } from '@/sync/hooks';
+import { RecentEntries } from '@/sync/RecentEntries';
 import { Card } from '@/components/Card';
 import { Body, Button, Caption, Field, Screen, Title } from '@/components/ui';
 import { fontSizes, radius, spacing, useTheme } from '@/theme';
@@ -194,6 +196,7 @@ export default function AddWorkout() {
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['workouts'] });
+      void queryClient.invalidateQueries({ queryKey: LOCAL_KEY });
       router.back();
     },
     onError: (e) =>
@@ -257,6 +260,16 @@ export default function AddWorkout() {
             </View>
           </View>
         ) : null}
+
+        <RecentEntries
+          table="workouts"
+          server={recent.data as unknown as { id: string; updated_at: string }[] | undefined}
+          describe={(e) => {
+            const when = new Date(String(e.data.started_at)).toLocaleDateString();
+            const min = Math.round((Number(e.data.duration_s) || 0) / 60);
+            return `Workout ${when} · ${min} min`;
+          }}
+        />
 
         {entries.map((entry, ei) => {
           const cardio = entry.exercise.muscle_group === 'cardio';

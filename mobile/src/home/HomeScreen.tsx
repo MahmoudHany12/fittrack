@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { Activity, Brain, Dumbbell } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { getDashboard, type Dashboard, type StatEntry } from '@/api/dashboard';
 import { Ring } from '@/components/Ring';
 import { Body, Button, Caption, Title } from '@/components/ui';
+import { useOnline, usePendingCount, usePendingTotals } from '@/sync/hooks';
 import { fontSizes, radius, spacing, useTheme } from '@/theme';
 
 import {
@@ -211,8 +212,37 @@ function BodyRows({ data, go }: { data: Dashboard; go: (r: Route) => void }) {
   );
 }
 
+/** Start of today in UTC (matches how the dashboard counts "today"). */
+function startOfTodayUtc(): Date {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
+/** Add today's unsynced local food kcal / workout minutes on top of the server numbers. */
+export function withPendingTotals(data: Dashboard, extra: { kcal: number; minutes: number }): Dashboard {
+  if (!extra.kcal && !extra.minutes) return data;
+  const diet = data.diet;
+  const ex = data.exercise;
+  return {
+    ...data,
+    diet:
+      extra.kcal && diet
+        ? { ...diet, kcal_eaten: (diet.kcal_eaten ?? 0) + extra.kcal }
+        : diet,
+    exercise:
+      extra.minutes && ex
+        ? { ...ex, workout_minutes_today: (ex.workout_minutes_today ?? 0) + extra.minutes }
+        : ex,
+  };
+}
+
 export function HomeScreen() {
   const t = useTheme();
+  const online = useOnline();
+  const pending = usePendingCount();
+  const [today] = useState(startOfTodayUtc);
+  const extra = usePendingTotals(today);
   const router = useRouter();
   const { data, error, isPending, isError, isRefetching, refetch } = useQuery({
     queryKey: ['dashboard'],
@@ -247,6 +277,7 @@ export function HomeScreen() {
     );
   }
 
+  const shown = withPendingTotals(data, extra);
   const stats = data.stats;
   return (
     <ScrollView
@@ -262,7 +293,10 @@ export function HomeScreen() {
         >
           {data.status.label}
         </Text>
-        {isError ? <Caption>Saved on this device</Caption> : null}
+        {isError || !online ? <Caption>Saved on this device</Caption> : null}
+        {pending > 0 ? (
+          <Caption>{`${pending} ${pending === 1 ? 'entry' : 'entries'} waiting to sync`}</Caption>
+        ) : null}
       </View>
 
       <SectionHeading>Fitness</SectionHeading>
@@ -291,11 +325,11 @@ export function HomeScreen() {
           />
         </>
       ) : (
-        <ActivityCard data={data} onPress={() => go('/add/workout')} />
+        <ActivityCard data={shown} onPress={() => go('/add/workout')} />
       )}
 
       <SectionHeading>Body & Nutrition</SectionHeading>
-      <BodyRows data={data} go={go} />
+      <BodyRows data={shown} go={go} />
     </ScrollView>
   );
 }

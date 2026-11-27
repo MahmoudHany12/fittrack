@@ -14,6 +14,13 @@ jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
 const mockGet = jest.fn();
 jest.mock('@/api/dashboard', () => ({ getDashboard: () => mockGet() }));
 
+const mockHooks = { online: true, pending: 0, totals: { kcal: 0, minutes: 0 } };
+jest.mock('@/sync/hooks', () => ({
+  useOnline: () => mockHooks.online,
+  usePendingCount: () => mockHooks.pending,
+  usePendingTotals: () => mockHooks.totals,
+}));
+
 const full: Dashboard = {
   name: 'Alex',
   status: { key: 'well_rested', label: 'Well rested' },
@@ -80,6 +87,9 @@ const byLabel = (r: ReactTestRenderer, prefix: string) =>
 beforeEach(() => {
   mockPush.mockReset();
   mockGet.mockReset();
+  mockHooks.online = true;
+  mockHooks.pending = 0;
+  mockHooks.totals = { kcal: 0, minutes: 0 };
 });
 
 describe('HomeScreen', () => {
@@ -163,5 +173,25 @@ describe('HomeScreen', () => {
     const t = text(r);
     expect(t).toContain('Saved on this device');
     expect(t).toContain('1,420 / 2,200 kcal');
+  });
+
+  it('shows pending-sync and offline captions', async () => {
+    mockGet.mockResolvedValue(full);
+    mockHooks.pending = 2;
+    mockHooks.online = false;
+    const r = await render();
+    expect(text(r)).toContain('2 entries waiting to sync');
+    expect(text(r)).toContain('Saved on this device');
+    mockHooks.pending = 1;
+    const r2 = await render();
+    expect(text(r2)).toContain('1 entry waiting to sync');
+  });
+
+  it('adds pending local kcal and minutes to the server numbers', async () => {
+    mockGet.mockResolvedValue({ ...full, stats: null });
+    mockHooks.totals = { kcal: 300, minutes: 20 };
+    const r = await render();
+    expect(text(r)).toContain('1,720 / 2,200 kcal');
+    expect(text(r)).toContain('50 min workout today');
   });
 });
