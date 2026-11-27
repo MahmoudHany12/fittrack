@@ -8,6 +8,8 @@ pub struct Config {
     pub bind_addr: String,
     pub access_ttl: Duration,
     pub refresh_ttl: Duration,
+    /// Enabled v2 feature flags (`FEATURES=stats,friends,leaderboard,chat`).
+    pub features: std::collections::HashSet<String>,
 }
 
 impl Config {
@@ -23,6 +25,12 @@ impl Config {
             bind_addr: std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()),
             access_ttl: Duration::minutes(15),
             refresh_ttl: Duration::days(30),
+            features: std::env::var("FEATURES")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect(),
         })
     }
 
@@ -33,6 +41,14 @@ impl Config {
             bind_addr: "127.0.0.1:0".into(),
             access_ttl: Duration::minutes(15),
             refresh_ttl: Duration::days(30),
+            features: ["stats", "friends", "leaderboard", "chat"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
         }
+    }
+
+    pub fn feature(&self, name: &str) -> bool {
+        self.features.contains(name)
     }
 }

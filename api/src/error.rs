@@ -11,6 +11,8 @@ pub enum AppError {
     BadRequest(String),
     Validation(BTreeMap<String, Vec<String>>),
     Unauthorized,
+    Forbidden,
+    NotFound,
     Conflict(&'static str),
     Internal(anyhow::Error),
 }
@@ -57,6 +59,18 @@ impl IntoResponse for AppError {
                 StatusCode::UNAUTHORIZED,
                 "unauthorized",
                 "Invalid or missing credentials".to_string(),
+                None,
+            ),
+            AppError::Forbidden => (
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                "You do not have access to this".to_string(),
+                None,
+            ),
+            AppError::NotFound => (
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "Not found".to_string(),
                 None,
             ),
             AppError::Conflict(m) => (StatusCode::CONFLICT, "conflict", m.to_string(), None),
