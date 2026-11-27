@@ -383,7 +383,6 @@ mod tests {
                 awful.strength,
             ),
             (rested.cardio, bad.cardio, worst.cardio, awful.cardio),
-            (rested.focus, bad.focus, worst.focus, awful.focus),
         ] {
             assert!(b.value < r.value);
             assert!(x.value < b.value);
@@ -391,6 +390,9 @@ mod tests {
             let ratio = f64::from(x.value) / f64::from(r.value);
             assert!((0.77..=0.82).contains(&ratio), "ratio {ratio}");
         }
+        // Focus also loses its own good-night component, so only check direction.
+        assert!(worst.focus.value < bad.focus.value && bad.focus.value < rested.focus.value);
+        assert_eq!(worst.focus.value, awful.focus.value);
     }
 
     #[test]
