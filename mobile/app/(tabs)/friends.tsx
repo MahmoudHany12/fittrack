@@ -68,6 +68,7 @@ function FriendCard({ friend }: { friend: Friend }) {
 }
 
 export default function Friends() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const friends = useQuery({ queryKey: friendKeys.all, queryFn: listFriends });
   const [code, setCode] = useState('');
@@ -108,6 +109,8 @@ export default function Friends() {
     <Screen>
       <Title>Friends</Title>
       <ScrollView contentContainerStyle={{ gap: spacing(2), paddingBottom: spacing(4) }}>
+        <Button title="Messages" variant="plain" onPress={() => router.push("/chat")} />
+        <Button title="Leaderboard" variant="plain" onPress={() => router.push("/leaderboard")} />
         <Button
           title="Invite a friend"
           onPress={() => invite.mutate()}

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 
 import { getProfile, profileKeys, type Profile, saveProfile, validateCalorieTarget } from '@/api/profile';
@@ -23,6 +24,7 @@ export default function Settings() {
 }
 
 function SettingsForm({ profile, signOut }: { profile: Profile; signOut: () => Promise<void> | void }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [name, setName] = useState(profile.display_name ?? '');
   const [calories, setCalories] = useState(String(profile.calorie_target));
@@ -93,6 +95,8 @@ function SettingsForm({ profile, signOut }: { profile: Profile; signOut: () => P
       <Button title="Save" onPress={submit} busy={save.isPending} />
       {saved ? <Caption>Saved.</Caption> : null}
       {errors.save ? <Caption warn>{errors.save}</Caption> : null}
+      <Button title="Health data import" variant="plain" onPress={() => router.push("/health-permissions")} />
+      <Button title="Weekly summary and export" variant="plain" onPress={() => router.push("/summary")} />
       <Button title="Sign out" variant="plain" onPress={() => void signOut()} />
     </Screen>
   );
