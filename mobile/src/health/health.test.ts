@@ -10,6 +10,21 @@ jest.mock('expo-secure-store', () => ({
   setItemAsync: jest.fn(async () => undefined),
   deleteItemAsync: jest.fn(async () => undefined),
 }));
+// Simulate Expo Go / a build without the native modules, whether or not they are installed.
+jest.mock(
+  '@kingstinct/react-native-healthkit',
+  () => {
+    throw new Error('native module unavailable');
+  },
+  { virtual: true },
+);
+jest.mock(
+  'react-native-health-connect',
+  () => {
+    throw new Error('native module unavailable');
+  },
+  { virtual: true },
+);
 jest.mock('@/api/health', () => ({
   ...jest.requireActual('@/api/health'),
   importHealth: jest.fn(),
