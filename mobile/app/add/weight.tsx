@@ -38,7 +38,7 @@ export default function AddWeight() {
   return (
     <Screen>
       <Title>Weight</Title>
-      <Body muted>Log today's weight.</Body>
+      <Body muted>Log your weight for today.</Body>
       <Field
         label={`Weight (${unitLabel(units)})`}
         value={text}

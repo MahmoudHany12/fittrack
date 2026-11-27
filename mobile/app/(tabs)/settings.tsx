@@ -1,31 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
-import { getProfile, profileKeys, saveProfile, validateCalorieTarget } from '@/api/profile';
+import { getProfile, profileKeys, type Profile, saveProfile, validateCalorieTarget } from '@/api/profile';
 import { displayWeight, parseWeightInput, unitLabel, type Units } from '@/api/weight';
 import { useAuth } from '@/auth/AuthProvider';
 import { Body, Button, Caption, Field, Screen, Title } from '@/components/ui';
 
 export default function Settings() {
   const { signOut } = useAuth();
-  const queryClient = useQueryClient();
   const profile = useQuery({ queryKey: profileKeys.all, queryFn: getProfile });
 
-  const [name, setName] = useState('');
-  const [calories, setCalories] = useState('');
-  const [goal, setGoal] = useState('');
-  const [units, setUnits] = useState<Units>('metric');
+  if (!profile.data) {
+    return (
+      <Screen>
+        <Title>Settings</Title>
+        {profile.isError ? <Caption warn>Could not load your profile.</Caption> : <Caption>Loading...</Caption>}
+        <Button title="Sign out" variant="plain" onPress={() => void signOut()} />
+      </Screen>
+    );
+  }
+  return <SettingsForm profile={profile.data} signOut={signOut} />;
+}
+
+function SettingsForm({ profile, signOut }: { profile: Profile; signOut: () => Promise<void> | void }) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(profile.display_name ?? '');
+  const [calories, setCalories] = useState(String(profile.calorie_target));
+  const [goal, setGoal] = useState(
+    profile.weight_goal_kg === null ? '' : displayWeight(profile.weight_goal_kg, profile.units),
+  );
+  const [units, setUnits] = useState<Units>(profile.units);
   const [errors, setErrors] = useState<{ calories?: string; goal?: string; save?: string }>({});
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    const p = profile.data;
-    if (!p) return;
-    setName(p.display_name ?? '');
-    setCalories(String(p.calorie_target));
-    setUnits(p.units);
-    setGoal(p.weight_goal_kg === null ? '' : displayWeight(p.weight_goal_kg, p.units));
-  }, [profile.data]);
 
   const save = useMutation({
     mutationFn: saveProfile,
@@ -63,7 +69,6 @@ export default function Settings() {
   return (
     <Screen>
       <Title>Settings</Title>
-      {profile.isError ? <Caption warn>Could not load your profile.</Caption> : null}
       <Field label="Display name" value={name} onChangeText={setName} maxLength={50} />
       <Field
         label="Daily calorie target"
