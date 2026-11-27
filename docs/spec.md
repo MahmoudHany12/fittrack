@@ -38,3 +38,27 @@ See `docs/design.md`. Readiness: `docs/readiness.md`.
 
 ## Security
 TLS terminates at a reverse proxy in front of the API (see README); Postgres volume and backups must be on encrypted disk, backups additionally encrypted with `age`/gpg (see `scripts/backup.sh`). Secrets only via env. Argon2id passwords; refresh tokens opaque, hashed, rotated.
+
+## Contracts added for parallel work
+
+### GET /dashboard
+```json
+{
+  "name": "Alex",
+  "status": { "key": "well_rested|okay|tired|no_data", "label": "Well rested" },
+  "readiness": { "score": 82, "components": { "sleep": 90, "training": 100, "recovery": 70 } },
+  "sleep": { "minutes": 460, "quality": 4, "label": "Well rested" },
+  "diet": { "kcal_eaten": 1420, "kcal_target": 2200, "label": "Under-eating|On track|Overeating" },
+  "exercise": { "steps": 6200, "workout_minutes_today": 30, "workout_count_today": 1 },
+  "weight": { "kg": 78.4, "trend": "up|flat|down" },
+  "stats": { "strength": {"value": 40, "level": 2, "progress": 0.6}, "cardio": {...}, "focus": {...} }
+}
+```
+`stats` is `null` unless the `stats` feature flag is on. Any section with no data returns its numbers as `null` (never errors).
+
+### Health import
+`PUT /health/consents` body `{ "steps": bool, "workouts": bool, "sleep": bool }`; `GET /health/consents`.
+`POST /health/import` body `{ "steps":[{"external_id","date","count"}], "workouts":[{"external_id","started_at","duration_s","kind"}], "sleep":[{"external_id","bedtime","wake_time"}] }`: idempotent (dedupe by user+source+external_id), ignores categories the user has not consented to (returns per-category counts imported/skipped). Workouts go to `workouts` (source `health`), sleep to `sleep_logs` (source `health`), steps to `health_samples`.
+
+### Friends (v2, flag `friends`)
+`POST /friends/invites` -> `{code, link, expires_at}`; `POST /friends/invites/{code}/accept`; `GET /friends`; `DELETE /friends/{user_id}`; `PUT /friends/{user_id}/share` `{enabled}` (weekly summary consent; default off; revoke any time); `GET /friends/{user_id}/summary` returns 403 unless that friend has an active grant to the caller.
