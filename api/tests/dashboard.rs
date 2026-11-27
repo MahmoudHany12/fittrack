@@ -179,3 +179,26 @@ async fn stats_included_only_when_flag_on_and_data_exists(pool: PgPool) {
     let (_, d) = dashboard(&off, &token).await;
     assert!(d["stats"].is_null());
 }
+
+#[sqlx::test]
+async fn steps_come_from_todays_health_samples(pool: PgPool) {
+    let app = router(pool.clone());
+    let (token, uid) = register(&app, "ann@example.com").await;
+    let (_, d) = dashboard(&app, &token).await;
+    assert!(d["exercise"]["steps"].is_null());
+    for (ext, days_ago, v) in [("a", 0, 6200.0_f64), ("b", 1, 9000.0)] {
+        sqlx::query(
+            "INSERT INTO health_samples (user_id, category, external_id, date, value) \
+             VALUES ($1, 'steps', $2, (now() at time zone 'utc')::date - $3::int, $4)",
+        )
+        .bind(uid)
+        .bind(ext)
+        .bind(days_ago)
+        .bind(v)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let (_, d) = dashboard(&app, &token).await;
+    assert_eq!(d["exercise"]["steps"], 6200);
+}
