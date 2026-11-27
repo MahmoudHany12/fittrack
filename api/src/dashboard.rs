@@ -85,7 +85,13 @@ async fn dashboard(
     user: AuthUser,
 ) -> Result<Json<Dashboard>, AppError> {
     let now = Utc::now();
-    Ok(Json(build(&state.pool, user.0, now).await?))
+    let mut d = build(&state.pool, user.0, now).await?;
+    if state.config.feature("stats") {
+        d.stats = crate::stats::current_stats(&state.pool, user.0, now)
+            .await?
+            .map(|s| serde_json::to_value(s).unwrap_or_default());
+    }
+    Ok(Json(d))
 }
 
 pub async fn build(
@@ -188,7 +194,7 @@ pub async fn build(
             kg: trend.current_kg,
             trend: trend.trend,
         },
-        stats: None, // wired to stats::current_stats once the stats feature lands
+        stats: None, // filled by the handler when the `stats` flag is on
     })
 }
 
