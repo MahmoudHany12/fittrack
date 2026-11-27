@@ -146,3 +146,36 @@ async fn aggregates_todays_data_for_the_caller_only(pool: PgPool) {
     assert!(d["readiness"]["score"].as_u64().unwrap() > 0);
     assert_ne!(d["status"]["key"], "no_data");
 }
+
+fn app_with(pool: PgPool, cfg: Config) -> Router {
+    app(AppState {
+        pool,
+        config: Arc::new(cfg),
+    })
+}
+
+#[sqlx::test]
+async fn stats_included_only_when_flag_on_and_data_exists(pool: PgPool) {
+    let app = router(pool.clone());
+    let (token, uid) = register(&app, "ann@example.com").await;
+    // No activity yet: stats is null even with the flag on.
+    let (_, d) = dashboard(&app, &token).await;
+    assert!(d["stats"].is_null());
+
+    sqlx::query(
+        "INSERT INTO workouts (user_id, started_at, duration_s) VALUES ($1, now() - interval '1 day', 3600)",
+    )
+    .bind(uid)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (_, d) = dashboard(&app, &token).await;
+    assert!(d["stats"]["strength"]["level"].as_u64().is_some(), "{d}");
+
+    // Flag off: stats stays null.
+    let mut cfg = Config::for_test();
+    cfg.features.clear();
+    let off = app_with(pool, cfg);
+    let (_, d) = dashboard(&off, &token).await;
+    assert!(d["stats"].is_null());
+}
