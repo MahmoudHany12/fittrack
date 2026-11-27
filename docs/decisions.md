@@ -24,3 +24,11 @@
 | 2026-11-27 | Dark-first design inspired by the feel of a phone health widget; own palette/icons/copy | Owner feedback; no third-party game assets |
 | 2026-11-27 | Rust is verified by GitHub CI (not locally) when Docker Desktop can't start | C: drive was full; do not delete user data |
 | 2026-11-27 | Mobile deps: Expo SDK 58, TanStack Query, expo-secure-store, lucide-react-native (ISC), react-native-svg (MIT) | Maintained libraries |
+
+## Health import (feature/health)
+| Date | Decision | Why |
+|---|---|---|
+| 2026-11-27 | iOS reads HealthKit via `@kingstinct/react-native-healthkit` (MIT, Nitro module); Android reads Health Connect via `react-native-health-connect` (MIT). Not Google Fit (deprecated) | Maintained libraries; read-only, per-category permissions |
+| 2026-11-27 | Both need native code: a development build (EAS or `expo run:*`), not Expo Go. Config plugins added to `mobile/app.json` (plus `expo-build-properties` for Android minSdk 26 and `react-native-nitro-modules`) | Expo Go cannot load them. Native modules are lazy-required behind `src/health/provider.ts`, so Expo Go, web and jest get a no-op provider |
+| 2026-11-27 | Consent is per category (steps, workouts, sleep), default off, enforced server-side; revoking stops future imports but keeps imported data | Health data is sensitive; the user deletes data through the normal screens. Payloads are never logged |
+| 2026-11-27 | Steps are stored once per local day (`steps-YYYY-MM-DD`), updated if the count grows; workouts/sleep dedupe by (user, source, external_id) | Idempotent re-sync; no minute-level data |
