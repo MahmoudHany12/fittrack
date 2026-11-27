@@ -161,6 +161,15 @@ pub async fn build(
     .await?;
     let kcal_eaten = kcal.0.unwrap_or(0.0).round() as i64;
 
+    let steps: Option<i64> = sqlx::query_scalar(
+        "SELECT SUM(value)::float8::bigint FROM health_samples \
+         WHERE user_id = $1 AND category = 'steps' AND date = $2",
+    )
+    .bind(user_id)
+    .bind(now.date_naive())
+    .fetch_one(pool)
+    .await?;
+
     let ready = readiness::compute(sleep_input.as_ref(), &workouts, now, Weights::from_env());
     let trend = weight::weight_trend(pool, user_id, now).await?;
 
@@ -186,7 +195,7 @@ pub async fn build(
             label: diet_label(kcal_eaten, calorie_target, now.hour()),
         },
         exercise: ExerciseOut {
-            steps: None, // wired to health samples once health import lands
+            steps,
             workout_minutes_today: secs_today / 60,
             workout_count_today: count_today,
         },
