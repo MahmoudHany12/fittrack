@@ -14,8 +14,8 @@ CREATE TABLE sleep_logs (id serial PRIMARY KEY, user_id int REFERENCES users(id)
 INSERT INTO users (email) SELECT 'u' || g || '@example.com' FROM generate_series(1, 25) g;
 INSERT INTO sleep_logs (user_id, minutes) SELECT (g % 25) + 1, 360 + g FROM generate_series(1, 100) g;
 SQL
-file="$(PGDATABASE="$src" BACKUP_DIR="$dir" "$here/backup.sh" | tail -1)"
-"$here/restore.sh" "$file" "$dst"
+file="$(PGDATABASE="$src" BACKUP_DIR="$dir" bash "$here/backup.sh" | tail -1)"
+bash "$here/restore.sh" "$file" "$dst"
 count() { psql -At -d "$1" -c "SELECT (SELECT count(*) FROM users) || ',' || (SELECT count(*) FROM sleep_logs) || ',' || (SELECT sum(minutes) FROM sleep_logs)"; }
 a="$(count "$src")"; b="$(count "$dst")"
 if [ "$a" != "$b" ]; then echo "MISMATCH src=$a dst=$b" >&2; exit 1; fi
