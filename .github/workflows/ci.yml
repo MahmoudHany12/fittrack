@@ -2,48 +2,121 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "feature/**", "release/**"]
 jobs:
   api:
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('api/Cargo.toml') != '' }}
-    defaults: { run: { working-directory: api } }
+    defaults:
+      run:
+        working-directory: api
     services:
       postgres:
         image: postgres:16
-        env: { POSTGRES_USER: fittrack, POSTGRES_PASSWORD: ci, POSTGRES_DB: fittrack }
-        ports: ["5432:5432"]
+        env:
+          POSTGRES_USER: fittrack
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: fittrack
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U fittrack" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://fittrack:ci@localhost:5432/fittrack
-      SQLX_OFFLINE: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with: { components: "rustfmt, clippy" }
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: api }
+        with:
+          workspaces: api
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cargo-lock
+          path: api/Cargo.lock
   mobile:
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('mobile/package.json') != '' }}
-    defaults: { run: { working-directory: mobile } }
+    defaults:
+      run:
+        working-directory: mobile
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm, cache-dependency-path: mobile/package-lock.json }
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test -- --ci
   ci-ok:
     if: always()
-    needs: [api, mobile]
+    needs: [api, mobile, backup-restore, docker-smoke]
     runs-on: ubuntu-latest
     steps:
       - run: |
-          echo "api=${{ needs.api.result }} mobile=${{ needs.mobile.result }}"
-          [ "${{ needs.api.result }}" != "failure" ] && [ "${{ needs.mobile.result }}" != "failure" ]
+          echo "api=${{ needs.api.result }} mobile=${{ needs.mobile.result }} backup=${{ needs.backup-restore.result }}"
+          test "${{ needs.api.result }}" = "success" && test "${{ needs.mobile.result }}" = "success" && test "${{ needs.backup-restore.result }}" = "success" && test "${{ needs.docker-smoke.result }}" = "success"
+  backup-restore:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fittrack
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fittrack" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: fittrack
+      PGPASSWORD: ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use PostgreSQL 16 client tools
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+      - run: bash scripts/test-restore.sh
+  docker-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fittrack
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: fittrack
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fittrack" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -t fittrack-api ./api
+      - name: Run image, migrate, register and call the dashboard
+        run: |
+          docker run -d --name api --network host \
+            -e DATABASE_URL=postgres://fittrack:ci@127.0.0.1:5432/fittrack \
+            -e JWT_ACCESS_SECRET=ci-secret-ci-secret-ci-secret-ci-secret \
+            -e BIND_ADDR=127.0.0.1:8080 -e FEATURES=stats,friends,leaderboard,chat \
+            fittrack-api
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8080/health
+          tok=$(curl -fsS -X POST http://127.0.0.1:8080/auth/register -H 'content-type: application/json' \
+            -d '{"email":"smoke@example.com","password":"correct-horse-battery"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+          curl -fsS http://127.0.0.1:8080/dashboard -H "authorization: Bearer $tok"
+          docker logs api | tail -5
