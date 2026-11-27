@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-import { Platform } from 'react-native';
+import { Platform } from "react-native";
 
-import { noopProvider } from './noop';
-import type { HealthProvider } from './types';
+import { noopProvider } from "./noop";
+import type { HealthProvider } from "./types";
 
-export type { HealthProvider } from './types';
+export type { HealthProvider } from "./types";
 
 const cache = new Map<string, HealthProvider>();
 
@@ -17,8 +17,8 @@ export function getHealthProvider(os: string = Platform.OS): HealthProvider {
   const hit = cache.get(os);
   if (hit) return hit;
   let p: HealthProvider = noopProvider;
-  if (os === 'ios') p = require('./ios').createIosProvider();
-  else if (os === 'android') p = require('./android').createAndroidProvider();
+  if (os === "ios") p = require("./ios").createIosProvider();
+  else if (os === "android") p = require("./android").createAndroidProvider();
   cache.set(os, p);
   return p;
 }

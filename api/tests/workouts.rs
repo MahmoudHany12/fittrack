@@ -81,6 +81,7 @@ fn workout_body(ex: &str) -> Value {
     json!({
         "duration_s": 1800,
         "note": "Push day",
+        "kind": " strength ",
         "sets": [
             { "exercise_id": ex, "reps": 8, "weight_kg": 60.0 },
             { "exercise_id": ex, "reps": 6, "weight_kg": 65.5 },
@@ -120,6 +121,7 @@ async fn create_list_update_delete(pool: PgPool) {
     let id = created["id"].as_str().unwrap().to_string();
     assert_eq!(created["duration_s"], 1800);
     assert_eq!(created["source"], "manual");
+    assert_eq!(created["kind"], "strength");
     assert_eq!(created["sets"].as_array().unwrap().len(), 2);
     assert_eq!(created["sets"][0]["position"], 0);
     assert_eq!(created["sets"][1]["weight_kg"], 65.5);
@@ -145,6 +147,8 @@ async fn create_list_update_delete(pool: PgPool) {
     assert_eq!(s, StatusCode::OK, "{updated}");
     assert_eq!(updated["duration_s"], 2400);
     assert!(updated["note"].is_null());
+    // Omitting kind on PUT keeps the stored kind.
+    assert_eq!(updated["kind"], "strength");
     assert_eq!(updated["sets"].as_array().unwrap().len(), 1);
     assert_eq!(updated["sets"][0]["exercise_id"], squat);
 
@@ -242,6 +246,8 @@ async fn validation_errors(pool: PgPool) {
             }),
         ),
         ("note", json!({ "duration_s": 60, "note": "x".repeat(501) })),
+        ("kind", json!({ "duration_s": 60, "kind": "k".repeat(41) })),
+        ("kind", json!({ "duration_s": 60, "kind": "   " })),
     ];
     for (field, body) in cases {
         let (s, b) = call(

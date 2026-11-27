@@ -64,6 +64,7 @@ impl Table {
                 "started_at",
                 "duration_s",
                 "note",
+                "kind",
                 "source",
                 "external_id",
                 "updated_at",
@@ -107,7 +108,7 @@ impl Table {
     fn sql(self) -> &'static str {
         match self {
             Self::Workouts => {
-                "SELECT id, started_at, duration_s, note, source, external_id, updated_at \
+                "SELECT id, started_at, duration_s, note, kind, source, external_id, updated_at \
                  FROM workouts WHERE user_id = $1 AND deleted_at IS NULL \
                  ORDER BY started_at, id"
             }

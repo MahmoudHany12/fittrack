@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from "expo-secure-store";
 
 import {
   HEALTH_CATEGORIES,
@@ -6,12 +6,18 @@ import {
   type HealthConsents,
   type ImportBody,
   type ImportResult,
-} from '@/api/health';
+} from "@/api/health";
 
-import { buildBatches, mapSleep, mapSteps, mapWorkouts, startOfLocalDay } from './mapping';
-import type { HealthProvider } from './types';
+import {
+  buildBatches,
+  mapSleep,
+  mapSteps,
+  mapWorkouts,
+  startOfLocalDay,
+} from "./mapping";
+import type { HealthProvider } from "./types";
 
-const LAST_SYNC_KEY = 'fittrack.health_last_sync';
+const LAST_SYNC_KEY = "fittrack.health_last_sync";
 /** First sync looks this far back. */
 export const INITIAL_LOOKBACK_DAYS = 30;
 /** Sleep sessions can start before `since`; re-read a night's worth (dedupe makes it safe). */
@@ -79,14 +85,17 @@ export type SyncDeps = {
 export async function runSync(deps: SyncDeps): Promise<SyncSummary> {
   const { provider, consents, now } = deps;
   const send = deps.send ?? importHealth;
-  const since = deps.lastSync ?? new Date(now.getTime() - INITIAL_LOOKBACK_DAYS * 86400000);
+  const since =
+    deps.lastSync ?? new Date(now.getTime() - INITIAL_LOOKBACK_DAYS * 86400000);
 
   const [steps, workouts, sleep] = await Promise.all([
     consents.steps
       ? // whole days only: a partial day would overwrite the stored total with a smaller one
         provider.readSteps(startOfLocalDay(since)).then((r) => mapSteps(r, now))
       : [],
-    consents.workouts ? provider.readWorkouts(since).then((r) => mapWorkouts(r, now)) : [],
+    consents.workouts
+      ? provider.readWorkouts(since).then((r) => mapWorkouts(r, now))
+      : [],
     consents.sleep
       ? provider
           .readSleep(new Date(since.getTime() - SLEEP_OVERLAP_MS))

@@ -200,6 +200,14 @@ fn validate_sets(sets: &[SetInput]) -> Result<(), ValidationError> {
     }
 }
 
+fn valid_kind(v: &str) -> Result<(), ValidationError> {
+    if (1..=40).contains(&v.trim().chars().count()) {
+        Ok(())
+    } else {
+        Err(ValidationError::new("length"))
+    }
+}
+
 #[derive(Deserialize, Validate)]
 pub struct WorkoutInput {
     /// Client generated id; makes creation idempotent. Ignored by PUT.
@@ -210,6 +218,10 @@ pub struct WorkoutInput {
     pub duration_s: i32,
     #[validate(length(max = 500))]
     pub note: Option<String>,
+    /// Optional kind such as "running" (1-40 chars after trimming). On update,
+    /// omitting it keeps the stored kind.
+    #[validate(custom(function = "valid_kind"))]
+    pub kind: Option<String>,
     #[serde(default)]
     #[validate(length(max = 100), custom(function = "validate_sets"))]
     pub sets: Vec<SetInput>,
@@ -230,6 +242,7 @@ struct WorkoutRow {
     started_at: DateTime<Utc>,
     duration_s: i32,
     note: Option<String>,
+    kind: Option<String>,
     source: String,
     external_id: Option<String>,
     updated_at: DateTime<Utc>,
@@ -242,7 +255,8 @@ pub struct Workout {
     sets: Vec<WorkoutSet>,
 }
 
-const WORKOUT_COLS: &str = "id, started_at, duration_s, note, source, external_id, updated_at";
+const WORKOUT_COLS: &str =
+    "id, started_at, duration_s, note, kind, source, external_id, updated_at";
 
 #[derive(FromRow)]
 struct SetRow {
@@ -398,12 +412,13 @@ async fn create_workout(
     // Upsert, but only over the caller's own live row. A conflicting id owned
     // by someone else (or already deleted) matches nothing and becomes 404.
     let existed: Option<bool> = sqlx::query_scalar(
-        "INSERT INTO workouts (id, user_id, started_at, duration_s, note, updated_at)
-         VALUES ($1, $2, LEAST(COALESCE($3, now()), now()), $4, $5, now())
+        "INSERT INTO workouts (id, user_id, started_at, duration_s, note, kind, updated_at)
+         VALUES ($1, $2, LEAST(COALESCE($3, now()), now()), $4, $5, $6, now())
          ON CONFLICT (id) DO UPDATE
            SET started_at = LEAST(COALESCE($3, workouts.started_at), now()),
                duration_s = EXCLUDED.duration_s,
                note = EXCLUDED.note,
+               kind = COALESCE(EXCLUDED.kind, workouts.kind),
                updated_at = now()
            WHERE workouts.user_id = $2 AND workouts.deleted_at IS NULL
          RETURNING (xmax::text::bigint <> 0)",
@@ -413,6 +428,7 @@ async fn create_workout(
     .bind(body.started_at)
     .bind(body.duration_s)
     .bind(body.note.as_deref())
+    .bind(body.kind.as_deref().map(str::trim))
     .fetch_optional(&mut *tx)
     .await?;
     let existed = existed.ok_or(WorkoutError::NotFound)?;
@@ -437,7 +453,7 @@ async fn update_workout(
     let updated = sqlx::query(
         "UPDATE workouts
          SET started_at = LEAST(COALESCE($3, started_at), now()),
-             duration_s = $4, note = $5, updated_at = now()
+             duration_s = $4, note = $5, kind = COALESCE($6, kind), updated_at = now()
          WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
     )
     .bind(id)
@@ -445,6 +461,7 @@ async fn update_workout(
     .bind(body.started_at)
     .bind(body.duration_s)
     .bind(body.note.as_deref())
+    .bind(body.kind.as_deref().map(str::trim))
     .execute(&mut *tx)
     .await?;
     if updated.rows_affected() == 0 {

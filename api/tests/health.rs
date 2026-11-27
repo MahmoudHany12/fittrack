@@ -210,6 +210,13 @@ async fn import_is_idempotent(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(src, "health");
+    let (kind, note): (Option<String>, Option<String>) =
+        sqlx::query_as("SELECT kind, note FROM workouts")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(kind.is_some_and(|k| !k.is_empty()));
+    assert!(note.is_none());
 }
 
 #[sqlx::test]

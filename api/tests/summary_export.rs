@@ -381,7 +381,7 @@ async fn csv_tables_are_scoped_and_escaped(pool: PgPool) {
     let lines: Vec<&str> = r.text.trim_end().split("\r\n").collect();
     assert_eq!(
         lines[0],
-        "id,started_at,duration_s,note,source,external_id,updated_at"
+        "id,started_at,duration_s,note,kind,source,external_id,updated_at"
     );
     assert_eq!(lines.len(), 3, "{}", r.text);
     assert!(r.text.contains(",'=cmd|calc,"), "{}", r.text);
