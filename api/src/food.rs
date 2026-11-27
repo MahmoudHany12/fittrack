@@ -246,6 +246,9 @@ async fn search(
             Ok(food) => {
                 if seen.insert(food.id) {
                     results.push(food);
+                } else if let Some(slot) = results.iter_mut().find(|r| r.id == food.id) {
+                    // Already cached: swap in the refreshed row.
+                    *slot = food;
                 }
             }
             Err(e) => tracing::warn!(error = %e, "could not cache external food"),
