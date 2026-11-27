@@ -1,13 +1,13 @@
-import { authedRequest } from './client';
+import { authedRequest } from "./client";
 
 export const MUSCLE_GROUPS = [
-  'chest',
-  'back',
-  'legs',
-  'shoulders',
-  'arms',
-  'core',
-  'cardio',
+  "chest",
+  "back",
+  "legs",
+  "shoulders",
+  "arms",
+  "core",
+  "cardio",
 ] as const;
 export type MuscleGroup = (typeof MUSCLE_GROUPS)[number];
 
@@ -18,7 +18,11 @@ export type Exercise = {
   custom: boolean;
 };
 
-export type WorkoutSetInput = { exercise_id: string; reps: number; weight_kg: number };
+export type WorkoutSetInput = {
+  exercise_id: string;
+  reps: number;
+  weight_kg: number;
+};
 export type WorkoutSet = WorkoutSetInput & { id: string; position: number };
 
 export type WorkoutInput = {
@@ -27,6 +31,8 @@ export type WorkoutInput = {
   started_at?: string;
   duration_s: number;
   note?: string | null;
+  /** Optional kind such as "running" (1-40 chars). Omitting it keeps the stored kind. */
+  kind?: string | null;
   sets: WorkoutSetInput[];
 };
 
@@ -35,6 +41,7 @@ export type Workout = {
   started_at: string;
   duration_s: number;
   note: string | null;
+  kind: string | null;
   source: string;
   external_id: string | null;
   updated_at: string;
@@ -54,7 +61,7 @@ export function newId(): string {
   for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const h = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  const h = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
@@ -62,35 +69,46 @@ export function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
-export function searchExercises(q = ''): Promise<Exercise[]> {
+export function searchExercises(q = ""): Promise<Exercise[]> {
   const query = q.trim();
-  const qs = query ? `?q=${encodeURIComponent(query)}` : '';
+  const qs = query ? `?q=${encodeURIComponent(query)}` : "";
   return authedRequest<Exercise[]>(`/exercises${qs}`);
 }
 
-export function createExercise(name: string, muscleGroup: MuscleGroup): Promise<Exercise> {
-  return authedRequest<Exercise>('/exercises', 'POST', {
+export function createExercise(
+  name: string,
+  muscleGroup: MuscleGroup,
+): Promise<Exercise> {
+  return authedRequest<Exercise>("/exercises", "POST", {
     name: name.trim(),
     muscle_group: muscleGroup,
   });
 }
 
-export function listWorkouts(range: { from?: string; to?: string } = {}): Promise<Workout[]> {
+export function listWorkouts(
+  range: { from?: string; to?: string } = {},
+): Promise<Workout[]> {
   const params = new URLSearchParams();
-  if (range.from) params.set('from', range.from);
-  if (range.to) params.set('to', range.to);
+  if (range.from) params.set("from", range.from);
+  if (range.to) params.set("to", range.to);
   const qs = params.toString();
-  return authedRequest<Workout[]>(`/workouts${qs ? `?${qs}` : ''}`);
+  return authedRequest<Workout[]>(`/workouts${qs ? `?${qs}` : ""}`);
 }
 
 export function createWorkout(input: WorkoutInput): Promise<Workout> {
-  return authedRequest<Workout>('/workouts', 'POST', { ...input, id: input.id ?? newId() });
+  return authedRequest<Workout>("/workouts", "POST", {
+    ...input,
+    id: input.id ?? newId(),
+  });
 }
 
-export function updateWorkout(id: string, input: WorkoutInput): Promise<Workout> {
-  return authedRequest<Workout>(`/workouts/${id}`, 'PUT', input);
+export function updateWorkout(
+  id: string,
+  input: WorkoutInput,
+): Promise<Workout> {
+  return authedRequest<Workout>(`/workouts/${id}`, "PUT", input);
 }
 
 export function deleteWorkout(id: string): Promise<void> {
-  return authedRequest<void>(`/workouts/${id}`, 'DELETE');
+  return authedRequest<void>(`/workouts/${id}`, "DELETE");
 }

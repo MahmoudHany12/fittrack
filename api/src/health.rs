@@ -258,7 +258,7 @@ async fn import(
     if consents.workouts {
         for w in &req.workouts {
             let res = sqlx::query(
-                "INSERT INTO workouts (user_id, started_at, duration_s, note, source, external_id) \
+                "INSERT INTO workouts (user_id, started_at, duration_s, kind, source, external_id) \
                  VALUES ($1, $2, $3, $4, 'health', $5) \
                  ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL \
                  DO NOTHING",

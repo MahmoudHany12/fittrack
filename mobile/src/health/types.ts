@@ -1,18 +1,31 @@
-import type { HealthCategory } from '@/api/health';
+import type { HealthCategory } from "@/api/health";
 
 export type { HealthCategory };
 
-/** Raw step record from the platform (any granularity; aggregated per day later). */
+/**
+ * Step record from the platform. Providers return one de-duplicated total per local day;
+ * `mapSteps` still sums records per day, so finer granularity also works.
+ */
 export type StepRecord = { start: Date; count: number };
 
 /** A workout as reported by the platform. `id` is the platform's stable record id. */
-export type WorkoutRecord = { id: string; start: Date; end: Date; kind: string };
+export type WorkoutRecord = {
+  id: string;
+  start: Date;
+  end: Date;
+  kind: string;
+};
 
 /**
  * A sleep segment. `asleep` is false for "in bed" / "awake" stages, which are ignored.
  * Providers that report whole sessions return one segment per session.
  */
-export type SleepSegment = { id: string; start: Date; end: Date; asleep: boolean };
+export type SleepSegment = {
+  id: string;
+  start: Date;
+  end: Date;
+  asleep: boolean;
+};
 
 export interface HealthProvider {
   /** Whether the platform health store can be used (false in Expo Go, web, simulators without it). */

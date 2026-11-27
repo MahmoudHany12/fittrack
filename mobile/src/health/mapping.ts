@@ -4,9 +4,9 @@ import {
   type SleepItem,
   type StepItem,
   type WorkoutItem,
-} from '@/api/health';
+} from "@/api/health";
 
-import type { SleepSegment, StepRecord, WorkoutRecord } from './types';
+import type { SleepSegment, StepRecord, WorkoutRecord } from "./types";
 
 const MAX_STEPS_PER_DAY = 1_000_000;
 const MAX_SLEEP_MS = 24 * 60 * 60 * 1000;
@@ -14,7 +14,7 @@ const MAX_WORKOUT_S = 86400;
 /** Asleep segments closer than this belong to the same night. */
 export const SLEEP_MERGE_GAP_MS = 60 * 60 * 1000;
 
-const pad = (n: number) => String(n).padStart(2, '0');
+const pad = (n: number) => String(n).padStart(2, "0");
 
 /** Local calendar day as YYYY-MM-DD. */
 export function localDay(d: Date): string {
@@ -25,11 +25,51 @@ export function startOfLocalDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+/** Hard cap on how many local days one step import reads (one platform query per day). */
+export const MAX_STEP_DAYS = 120;
+
+/**
+ * Local calendar-day windows from `since`'s day through today (`end` is clipped to `now`).
+ * At most `maxDays` of the most recent days are returned, oldest first.
+ */
+export function dayWindows(
+  since: Date,
+  now: Date,
+  maxDays: number = MAX_STEP_DAYS,
+): { day: string; start: Date; end: Date }[] {
+  const out: { day: string; start: Date; end: Date }[] = [];
+  for (
+    let start = startOfLocalDay(since);
+    start.getTime() <= now.getTime();
+    start = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1)
+  ) {
+    const next = new Date(
+      start.getFullYear(),
+      start.getMonth(),
+      start.getDate() + 1,
+    );
+    out.push({
+      day: localDay(start),
+      start,
+      end: next.getTime() > now.getTime() ? now : next,
+    });
+  }
+  return out.slice(-maxDays);
+}
+
 /** Sum step records per local day. One stable id per day, so a later, larger count updates it. */
-export function mapSteps(records: readonly StepRecord[], now: Date): StepItem[] {
+export function mapSteps(
+  records: readonly StepRecord[],
+  now: Date,
+): StepItem[] {
   const perDay = new Map<string, number>();
   for (const r of records) {
-    if (!Number.isFinite(r.count) || r.count <= 0 || r.start.getTime() > now.getTime()) continue;
+    if (
+      !Number.isFinite(r.count) ||
+      r.count <= 0 ||
+      r.start.getTime() > now.getTime()
+    )
+      continue;
     const day = localDay(r.start);
     perDay.set(day, (perDay.get(day) ?? 0) + r.count);
   }
@@ -43,14 +83,22 @@ export function mapSteps(records: readonly StepRecord[], now: Date): StepItem[] 
     }));
 }
 
-export function mapWorkouts(records: readonly WorkoutRecord[], now: Date): WorkoutItem[] {
+export function mapWorkouts(
+  records: readonly WorkoutRecord[],
+  now: Date,
+): WorkoutItem[] {
   const seen = new Set<string>();
   const out: WorkoutItem[] = [];
   for (const r of records) {
     const duration = Math.round((r.end.getTime() - r.start.getTime()) / 1000);
-    const kind = r.kind.trim().slice(0, 40) || 'workout';
+    const kind = r.kind.trim().slice(0, 40) || "workout";
     if (!r.id || seen.has(r.id)) continue;
-    if (duration < 1 || duration > MAX_WORKOUT_S || r.start.getTime() > now.getTime()) continue;
+    if (
+      duration < 1 ||
+      duration > MAX_WORKOUT_S ||
+      r.start.getTime() > now.getTime()
+    )
+      continue;
     seen.add(r.id);
     out.push({
       external_id: `workout-${r.id}`.slice(0, 200),
@@ -67,7 +115,10 @@ export function mapWorkouts(records: readonly WorkoutRecord[], now: Date): Worko
  * session is derived from its first segment so repeated syncs produce the same id.
  * Sessions longer than 24 h are dropped (the API would reject them).
  */
-export function mapSleep(segments: readonly SleepSegment[], now: Date): SleepItem[] {
+export function mapSleep(
+  segments: readonly SleepSegment[],
+  now: Date,
+): SleepItem[] {
   const asleep = segments
     .filter((s) => s.asleep && s.end.getTime() > s.start.getTime())
     .sort((a, b) => a.start.getTime() - b.start.getTime());
@@ -81,7 +132,10 @@ export function mapSleep(segments: readonly SleepSegment[], now: Date): SleepIte
     }
   }
   return sessions
-    .filter((s) => s.end.getTime() - s.start.getTime() <= MAX_SLEEP_MS && s.end <= now)
+    .filter(
+      (s) =>
+        s.end.getTime() - s.start.getTime() <= MAX_SLEEP_MS && s.end <= now,
+    )
     .map((s) => ({
       external_id: `sleep-${s.firstId}`.slice(0, 200),
       bedtime: s.start.toISOString(),
@@ -91,7 +145,8 @@ export function mapSleep(segments: readonly SleepSegment[], now: Date): SleepIte
 
 export function chunk<T>(items: readonly T[], size: number): T[][] {
   const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  for (let i = 0; i < items.length; i += size)
+    out.push(items.slice(i, i + size));
   return out;
 }
 

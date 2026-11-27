@@ -1,4 +1,4 @@
-import type { HealthProvider } from './types';
+import type { HealthProvider } from "./types";
 
 /** Used on web, in Expo Go, in tests and anywhere the native modules are missing. */
 export const noopProvider: HealthProvider = {
