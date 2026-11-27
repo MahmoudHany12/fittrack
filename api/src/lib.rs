@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod body;
 pub mod chat;
 pub mod config;
 pub mod dashboard;
@@ -15,6 +16,7 @@ pub mod sleep;
 pub mod stats;
 pub mod summary;
 pub mod sync;
+pub mod targets;
 pub mod weight;
 pub mod workouts;
 
@@ -47,6 +49,8 @@ pub fn app(state: AppState) -> Router {
         .merge(health::routes())
         .merge(friends::routes())
         .merge(export::routes())
+        .merge(body::routes())
+        .merge(targets::routes())
         .merge(dashboard::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(state)

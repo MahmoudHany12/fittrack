@@ -155,12 +155,14 @@ fn app_with(pool: PgPool, cfg: Config) -> Router {
 }
 
 #[sqlx::test]
-async fn stats_included_only_when_flag_on_and_data_exists(pool: PgPool) {
+async fn stats_included_only_when_flag_on(pool: PgPool) {
     let app = router(pool.clone());
     let (token, uid) = register(&app, "ann@example.com").await;
-    // No activity yet: stats is null even with the flag on.
+    // No activity yet: stats is a zeroed object with the flag on.
     let (_, d) = dashboard(&app, &token).await;
-    assert!(d["stats"].is_null());
+    assert_eq!(d["stats"]["strength"]["level"], 1, "{d}");
+    assert_eq!(d["stats"]["strength"]["value"], 0);
+    assert_eq!(d["stats"]["focus"]["progress"], 0.0);
 
     sqlx::query(
         "INSERT INTO workouts (user_id, started_at, duration_s) VALUES ($1, now() - interval '1 day', 3600)",
@@ -201,4 +203,98 @@ async fn steps_come_from_todays_health_samples(pool: PgPool) {
     }
     let (_, d) = dashboard(&app, &token).await;
     assert_eq!(d["exercise"]["steps"], 6200);
+}
+
+async fn send_json(app: &Router, method: &str, uri: &str, token: &str, body: Value) -> StatusCode {
+    let req = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("authorization", format!("Bearer {token}"))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    send(app, req).await.0
+}
+
+#[sqlx::test]
+async fn new_sections_are_present_on_an_empty_account(pool: PgPool) {
+    let app = router(pool);
+    let (token, _) = register(&app, "ann@example.com").await;
+    let (_, d) = dashboard(&app, &token).await;
+    assert_eq!(d["diet"]["protein_g_eaten"], 0);
+    assert!(d["diet"]["protein_target_g"].is_null());
+    assert!(d["body"]["weight_kg"].is_null());
+    assert!(d["body"]["body_fat_pct"].is_null());
+    assert!(d["body"]["skeletal_muscle_kg"].is_null());
+    assert!(d["body"]["measured_at"].is_null());
+    assert_eq!(d["body"]["trend"], "flat");
+    assert_eq!(d["workout_window"]["minutes_today"], 0);
+    assert_eq!(d["workout_window"]["goal_minutes"], 30);
+    assert_eq!(d["workout_window"]["fraction"], 0.0);
+    assert!(d["stats"].is_object(), "{d}");
+}
+
+#[sqlx::test]
+async fn dashboard_uses_computed_target_scan_and_workout_window(pool: PgPool) {
+    let app = router(pool.clone());
+    let (token, uid) = register(&app, "ann@example.com").await;
+    let s = send_json(
+        &app,
+        "PUT",
+        "/profile",
+        &token,
+        json!({ "calorie_target": 2200, "units": "metric", "goal": "maintain",
+                "activity_level": "sedentary" }),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let s = send_json(
+        &app,
+        "POST",
+        "/body-composition",
+        &token,
+        json!({ "weight_kg": 80.0, "body_fat_pct": 25.0, "skeletal_muscle_kg": 35.0,
+                "bmr_kcal": 1800, "source": "inbody" }),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    // 15 workout minutes today and 1500 steps -> 30 active minutes.
+    sqlx::query(
+        "INSERT INTO workouts (user_id, started_at, duration_s) \
+         VALUES ($1, greatest(now() - interval '1 minute', date_trunc('day', now())), 900)",
+    )
+    .bind(uid)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO health_samples (user_id, category, external_id, date, value) \
+         VALUES ($1, 'steps', 'a', (now() at time zone 'utc')::date, 1500)",
+    )
+    .bind(uid)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (_, d) = dashboard(&app, &token).await;
+    assert_eq!(d["diet"]["kcal_target"], 2160, "{d}");
+    assert_eq!(d["diet"]["protein_target_g"], 120);
+    assert_eq!(d["body"]["weight_kg"], 80.0);
+    assert_eq!(d["body"]["body_fat_pct"], 25.0);
+    assert_eq!(d["body"]["skeletal_muscle_kg"], 35.0);
+    assert!(d["body"]["measured_at"].is_string());
+    assert_eq!(d["workout_window"]["minutes_today"], 30);
+    assert_eq!(d["workout_window"]["fraction"], 1.0);
+}
+
+#[sqlx::test]
+async fn stats_object_present_for_brand_new_user_with_flag_on(pool: PgPool) {
+    let app = router(pool);
+    let (token, _) = register(&app, "ann@example.com").await;
+    let (_, d) = dashboard(&app, &token).await;
+    for k in ["strength", "cardio", "focus"] {
+        assert_eq!(d["stats"][k]["value"], 0, "{d}");
+        assert_eq!(d["stats"][k]["level"], 1);
+        assert_eq!(d["stats"][k]["progress"], 0.0);
+    }
 }
