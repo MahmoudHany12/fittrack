@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Star } from 'lucide-react-native';
 import { useRef, useState } from 'react';
@@ -11,10 +11,13 @@ import {
   formatDuration,
   formatMoment,
   isValidWindow,
+  listSleep,
   newSleepId,
   shiftMinutes,
 } from '@/api/sleep';
 import { saveSleep } from '@/sync/store';
+import { LOCAL_KEY } from '@/sync/hooks';
+import { RecentEntries } from '@/sync/RecentEntries';
 import { Body, Button, Caption, Screen, Title } from '@/components/ui';
 import { Card } from '@/components/Card';
 import { fontSizes, radius, spacing, useTheme } from '@/theme';
@@ -102,6 +105,7 @@ export default function AddSleep() {
   // One id per screen visit: a retried save updates the same row instead of duplicating it.
   const id = useRef(newSleepId());
 
+  const recent = useQuery({ queryKey: ['sleep', 'recent'], queryFn: () => listSleep() });
   const minutes = durationMinutes(bedtime, wake);
   const valid = isValidWindow(bedtime, wake);
 
@@ -116,6 +120,7 @@ export default function AddSleep() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['sleep'] });
       await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      await queryClient.invalidateQueries({ queryKey: LOCAL_KEY });
       router.back();
     },
   });
@@ -149,6 +154,14 @@ export default function AddSleep() {
         <Stars value={quality} onChange={setQuality} />
       </View>
       {error ? <Caption warn>{error}</Caption> : null}
+      <RecentEntries
+        table="sleep"
+        server={recent.data as unknown as { id: string; updated_at: string }[] | undefined}
+        describe={(e) => {
+          const mins = durationMinutes(new Date(String(e.data.bedtime)), new Date(String(e.data.wake_time)));
+          return `${new Date(String(e.data.wake_time)).toLocaleDateString()} · ${formatDuration(mins)}`;
+        }}
+      />
       <Button
         title="Save"
         onPress={() => {

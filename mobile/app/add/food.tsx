@@ -17,6 +17,7 @@ import {
   foodKeys,
   formatServing,
   isSearchable,
+  listFoodLogs,
   listFavorites,
   newId,
   previewTotals,
@@ -24,9 +25,12 @@ import {
   removeFavorite,
   searchFoods,
   stepServings,
+  todayUtc,
   type Food,
 } from '@/api/food';
 import { saveFoodLog } from '@/sync/store';
+import { LOCAL_KEY } from '@/sync/hooks';
+import { RecentEntries } from '@/sync/RecentEntries';
 import { Card } from '@/components/Card';
 import { Body, Button, Caption, Title } from '@/components/ui';
 import { fontSizes, radius, spacing, useTheme } from '@/theme';
@@ -117,6 +121,11 @@ export default function AddFood() {
 
   const favorites = useQuery({ queryKey: foodKeys.favorites, queryFn: listFavorites });
   const recent = useQuery({ queryKey: foodKeys.recent, queryFn: recentFoods });
+  const today = todayUtc();
+  const todayLogs = useQuery({
+    queryKey: ['food', 'logs', today],
+    queryFn: () => listFoodLogs(today),
+  });
   const results = useQuery({
     queryKey: foodKeys.search(query),
     queryFn: () => searchFoods(query),
@@ -148,6 +157,7 @@ export default function AddFood() {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: foodKeys.all });
       await qc.invalidateQueries({ queryKey: ['dashboard'] });
+      await qc.invalidateQueries({ queryKey: LOCAL_KEY });
       if (router.canGoBack()) router.back();
       else router.replace('/');
     },
@@ -221,6 +231,15 @@ export default function AddFood() {
             {favs.length === 0 && recents.length === 0 ? (
               <Body muted>Type at least 2 letters to search. Starred foods show up here.</Body>
             ) : null}
+            <RecentEntries
+              table="food_logs"
+              server={todayLogs.data as unknown as { id: string; updated_at: string }[] | undefined}
+              describe={(e) =>
+                `${typeof e.data.food_name === 'string' ? e.data.food_name : 'Food'} · ${Math.round(
+                  Number(e.data.kcal) || 0,
+                )} kcal`
+              }
+            />
           </>
         )}
       </ScrollView>
