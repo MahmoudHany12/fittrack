@@ -14,7 +14,6 @@ import {
 
 import {
   addFavorite,
-  createFoodLog,
   foodKeys,
   formatServing,
   isSearchable,
@@ -27,6 +26,7 @@ import {
   stepServings,
   type Food,
 } from '@/api/food';
+import { saveFoodLog } from '@/sync/store';
 import { Card } from '@/components/Card';
 import { Body, Button, Caption, Title } from '@/components/ui';
 import { fontSizes, radius, spacing, useTheme } from '@/theme';
@@ -138,10 +138,16 @@ export default function AddFood() {
   const add = useMutation({
     mutationFn: () => {
       if (!selected) throw new Error('No food selected');
-      return createFoodLog({ id: attemptId, food_id: selected.id, servings });
+      return saveFoodLog({
+        id: attemptId,
+        food_id: selected.id,
+        servings,
+        ...previewTotals(selected, servings),
+      });
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: foodKeys.all });
+      await qc.invalidateQueries({ queryKey: ['dashboard'] });
       if (router.canGoBack()) router.back();
       else router.replace('/');
     },

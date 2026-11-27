@@ -12,9 +12,9 @@ import {
   formatMoment,
   isValidWindow,
   newSleepId,
-  saveSleep,
   shiftMinutes,
 } from '@/api/sleep';
+import { saveSleep } from '@/sync/store';
 import { Body, Button, Caption, Screen, Title } from '@/components/ui';
 import { Card } from '@/components/Card';
 import { fontSizes, radius, spacing, useTheme } from '@/theme';
