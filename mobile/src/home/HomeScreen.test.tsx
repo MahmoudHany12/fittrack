@@ -14,11 +14,17 @@ jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
 const mockGet = jest.fn();
 jest.mock('@/api/dashboard', () => ({ getDashboard: () => mockGet() }));
 
-const mockHooks = { online: true, pending: 0, totals: { kcal: 0, minutes: 0 } };
+const mockHooks = {
+  online: true,
+  pending: 0,
+  totals: { kcal: 0, minutes: 0 },
+  weight: null as { kg: number; pending: boolean; at: number } | null,
+};
 jest.mock('@/sync/hooks', () => ({
   useOnline: () => mockHooks.online,
   usePendingCount: () => mockHooks.pending,
   usePendingTotals: () => mockHooks.totals,
+  useLatestLocalWeight: () => mockHooks.weight,
 }));
 
 const full: Dashboard = {
@@ -26,9 +32,23 @@ const full: Dashboard = {
   status: { key: 'well_rested', label: 'Well rested' },
   readiness: { score: 82 },
   sleep: { minutes: 460, quality: 4, label: 'Well rested' },
-  diet: { kcal_eaten: 1420, kcal_target: 2200, label: 'On track' },
+  diet: {
+    kcal_eaten: 1420,
+    kcal_target: 2200,
+    label: 'On track',
+    protein_g_eaten: 90,
+    protein_target_g: 140,
+  },
   exercise: { steps: 6200, workout_minutes_today: 30, workout_count_today: 1 },
   weight: { kg: 78.4, trend: 'down' },
+  body: {
+    weight_kg: 78.4,
+    trend: 'down',
+    body_fat_pct: 18.5,
+    skeletal_muscle_kg: 34.2,
+    measured_at: null,
+  },
+  workout_window: { minutes_today: 30, goal_minutes: 30, fraction: 1 },
   stats: {
     strength: { value: 40, level: 2, progress: 0.6 },
     cardio: { value: 60, level: 3, progress: 0.4 },
@@ -89,6 +109,7 @@ beforeEach(() => {
   mockGet.mockReset();
   mockHooks.online = true;
   mockHooks.pending = 0;
+  mockHooks.weight = null;
   mockHooks.totals = { kcal: 0, minutes: 0 };
 });
 
@@ -104,24 +125,53 @@ describe('HomeScreen', () => {
     const r = await render();
     const t = text(r);
     expect(t).toContain('Alex');
-    expect(t).toContain('Well rested');
-    expect(t).toContain('Strength');
+    expect(t).toContain('Healthy');
+    expect(t).toContain('| A |');
+    expect(t).toContain('Fitness');
+    expect(t).toContain('Strength Workout');
+    expect(t).toContain('Cardio Workout');
+    expect(t).toContain('Workout window');
+    expect(t).toContain('Focus');
     expect(t).toContain('Level 2/4');
     expect(t).toContain('Level 4/4');
+    expect(t).toContain('Body & Nutrition');
     expect(t).toContain('7 h 40 min');
     expect(t).toContain('1,420 / 2,200 kcal');
+    expect(t).toContain('Protein 90 / 140 g');
     expect(t).toContain('78.4 kg');
+    expect(t).toContain('Body fat 18.5% · Muscle 34.2 kg');
     expect(t).toContain('↘');
-    expect(t).not.toContain('Activity');
   });
 
-  it('falls back to a single Activity card without stats', async () => {
-    mockGet.mockResolvedValue({ ...full, stats: null });
+  it('still renders three level-1 cards without stats or newer API fields', async () => {
+    mockGet.mockResolvedValue({
+      ...full,
+      stats: null,
+      body: undefined,
+      workout_window: undefined,
+      diet: { kcal_eaten: 1420, kcal_target: 2200, label: 'On track' },
+    });
     const r = await render();
     const t = text(r);
-    expect(t).toContain('Activity');
-    expect(t).toContain('6,200 steps');
-    expect(t).not.toContain('Level 2/4');
+    expect(t.match(/Level 1\/4/g)).toHaveLength(3);
+    expect(t).toContain('Workout window');
+    expect(t).not.toContain('Body fat');
+    expect(t).not.toContain('Protein');
+  });
+
+  it('maps readiness to the status word', async () => {
+    mockGet.mockResolvedValue({ ...full, readiness: { score: 50 } });
+    expect(text(await render())).toContain('Okay');
+    mockGet.mockResolvedValue({ ...full, readiness: { score: 20 } });
+    expect(text(await render())).toContain('Tired');
+  });
+
+  it('shows the just-saved pending weight at once', async () => {
+    mockGet.mockResolvedValue(full);
+    mockHooks.weight = { kg: 80.2, pending: true, at: Date.now() };
+    const r = await render();
+    expect(text(r)).toContain('80.2 kg');
+    expect(text(r)).not.toContain('78.4 kg');
   });
 
   it('shows friendly empty copy', async () => {
@@ -131,7 +181,6 @@ describe('HomeScreen', () => {
     expect(t).toContain('No sleep logged yet — tap to add');
     expect(t).toContain('No meals logged yet — tap to add');
     expect(t).toContain('No weight logged yet — tap to add');
-    expect(t).toContain('No activity yet — tap to add');
   });
 
   it('navigates with one tap', async () => {
@@ -140,7 +189,7 @@ describe('HomeScreen', () => {
     await act(async () => byLabel(r, 'Sleep').props.onPress());
     await act(async () => byLabel(r, 'Diet').props.onPress());
     await act(async () => byLabel(r, 'Weight').props.onPress());
-    await act(async () => byLabel(r, 'Strength').props.onPress());
+    await act(async () => byLabel(r, 'Strength Workout').props.onPress());
     expect(mockPush.mock.calls.map((c) => c[0])).toEqual([
       '/add/sleep',
       '/add/food',
@@ -188,10 +237,13 @@ describe('HomeScreen', () => {
   });
 
   it('adds pending local kcal and minutes to the server numbers', async () => {
-    mockGet.mockResolvedValue({ ...full, stats: null });
+    mockGet.mockResolvedValue({
+      ...full,
+      workout_window: { minutes_today: 10, goal_minutes: 30, fraction: 0.33 },
+    });
     mockHooks.totals = { kcal: 300, minutes: 20 };
     const r = await render();
     expect(text(r)).toContain('1,720 / 2,200 kcal');
-    expect(text(r)).toContain('50 min workout today');
+    expect(text(r)).toContain('30 / 30 min');
   });
 });

@@ -16,7 +16,7 @@ import {
   type MuscleGroup,
 } from '@/api/workouts';
 import { saveWorkout } from '@/sync/store';
-import { LOCAL_KEY } from '@/sync/hooks';
+import { goBack, refreshAfterSave } from '@/sync/hooks';
 import { RecentEntries } from '@/sync/RecentEntries';
 import { Card } from '@/components/Card';
 import { Body, Button, Caption, Field, Screen, Title } from '@/components/ui';
@@ -195,9 +195,8 @@ export default function AddWorkout() {
         ),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['workouts'] });
-      void queryClient.invalidateQueries({ queryKey: LOCAL_KEY });
-      router.back();
+      refreshAfterSave(queryClient, ['workouts']);
+      goBack(router);
     },
     onError: (e) =>
       setError(

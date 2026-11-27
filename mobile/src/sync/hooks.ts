@@ -1,9 +1,9 @@
 import NetInfo from '@react-native-community/netinfo';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { onSynced } from './engine';
-import { pendingCount, pendingTotalsSince, recentEntries, type Entry, type PendingTotals } from './read';
+import { latestLocalWeight, pendingCount, pendingTotalsSince, recentEntries, type Entry, type LatestWeight, type PendingTotals } from './read';
 import type { TableName } from './types';
 
 /** Local-data queries live under this key so one invalidate refreshes them all. */
@@ -51,4 +51,31 @@ export function useRecentEntries(
     queryFn: () => recentEntries(table, server ?? [], limit),
   });
   return q.data ?? [];
+}
+
+export function useLatestLocalWeight(): LatestWeight | null {
+  useRefreshOnSync();
+  const q = useQuery({ queryKey: [...LOCAL_KEY, 'weight-latest'], queryFn: latestLocalWeight });
+  return q.data ?? null;
+}
+
+/**
+ * After a local save: refresh every local-data query, the dashboard and the screen's own
+ * list right away (not awaited, so navigation is instant), including inactive ones such
+ * as the Home tab sitting underneath the pushed screen.
+ */
+export function refreshAfterSave(qc: QueryClient, domainKey: readonly unknown[]): void {
+  for (const queryKey of [LOCAL_KEY, ['dashboard'], domainKey]) {
+    void qc.invalidateQueries({ queryKey: [...queryKey], refetchType: 'all' });
+  }
+}
+
+/** Back to the previous screen, or Home when there is none (deep link). */
+export function goBack(router: {
+  canGoBack: () => boolean;
+  back: () => void;
+  replace: (p: '/') => void;
+}): void {
+  if (router.canGoBack()) router.back();
+  else router.replace('/');
 }

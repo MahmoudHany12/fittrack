@@ -5,7 +5,7 @@ import { useRef, useState } from 'react';
 import { getProfile, profileKeys } from '@/api/profile';
 import { formatWeight, listWeight, newId, parseWeightInput, unitLabel, weightKeys } from '@/api/weight';
 import { saveWeight } from '@/sync/store';
-import { LOCAL_KEY } from '@/sync/hooks';
+import { goBack, refreshAfterSave } from '@/sync/hooks';
 import { RecentEntries } from '@/sync/RecentEntries';
 import { Body, Button, Caption, Field, Screen, Title } from '@/components/ui';
 
@@ -22,11 +22,9 @@ export default function AddWeight() {
 
   const save = useMutation({
     mutationFn: (kg: number) => saveWeight({ id: id.current, kg }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: weightKeys.all });
-      await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      await queryClient.invalidateQueries({ queryKey: LOCAL_KEY });
-      router.back();
+    onSuccess: () => {
+      refreshAfterSave(queryClient, weightKeys.all);
+      goBack(router);
     },
     onError: () => setError('Could not save. Check your connection and try again.'),
   });
