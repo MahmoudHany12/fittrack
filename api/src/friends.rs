@@ -332,20 +332,15 @@ fn week_start(now: DateTime<Utc>) -> chrono::NaiveDate {
     d - Duration::days(i64::from(d.weekday().num_days_from_monday()))
 }
 
-/// Loads the owner's weekly summary.
-/// TODO: wire in `summary::weekly_summary(pool, user_id, week_start)` once that
-/// lands; until then this returns a placeholder. It must only ever return the
-/// weekly summary (never raw logs).
+/// Loads the owner's weekly summary. It must only ever return the weekly
+/// summary (never raw logs).
 async fn load_summary(
-    _pool: &PgPool,
+    pool: &PgPool,
     user_id: Uuid,
     week_start: chrono::NaiveDate,
 ) -> Result<Value, AppError> {
-    Ok(json!({
-        "user_id": user_id,
-        "week_start": week_start,
-        "placeholder": true,
-    }))
+    let summary = crate::summary::weekly_summary(pool, user_id, week_start).await?;
+    serde_json::to_value(summary).map_err(|e| AppError::Internal(e.into()))
 }
 
 async fn friend_summary(
