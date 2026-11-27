@@ -31,5 +31,28 @@ services:
     ports:
       - "8080:8080"
 
+  # Daily backup into ./backups. Set AGE_RECIPIENT (an age public key) in .env to encrypt
+  # dumps; keep the private key offline. Restore: scripts/restore.sh <dump> <db>.
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-fittrack}
+      AGE_RECIPIENT: ${AGE_RECIPIENT:-}
+      BACKUP_DIR: /backups
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./backups:/backups
+    entrypoint:
+      - /bin/bash
+      - -c
+      - "if [ -n \"$$AGE_RECIPIENT\" ]; then apt-get update -qq && apt-get install -y -qq age >/dev/null; fi; while true; do bash /scripts/backup.sh || echo backup failed; sleep 86400; done"
+
 volumes:
   dbdata:
