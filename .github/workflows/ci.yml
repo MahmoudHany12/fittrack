@@ -56,9 +56,37 @@ jobs:
       - run: npm test -- --ci
   ci-ok:
     if: always()
-    needs: [api, mobile]
+    needs: [api, mobile, backup-restore]
     runs-on: ubuntu-latest
     steps:
       - run: |
-          echo "api=${{ needs.api.result }} mobile=${{ needs.mobile.result }}"
-          test "${{ needs.api.result }}" = "success" && test "${{ needs.mobile.result }}" = "success"
+          echo "api=${{ needs.api.result }} mobile=${{ needs.mobile.result }} backup=${{ needs.backup-restore.result }}"
+          test "${{ needs.api.result }}" = "success" && test "${{ needs.mobile.result }}" = "success" && test "${{ needs.backup-restore.result }}" = "success"
+  backup-restore:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fittrack
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fittrack" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: fittrack
+      PGPASSWORD: ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use PostgreSQL 16 client tools
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+      - run: bash scripts/test-restore.sh
