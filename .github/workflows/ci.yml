@@ -56,12 +56,12 @@ jobs:
       - run: npm test -- --ci
   ci-ok:
     if: always()
-    needs: [api, mobile, backup-restore]
+    needs: [api, mobile, backup-restore, docker-smoke]
     runs-on: ubuntu-latest
     steps:
       - run: |
           echo "api=${{ needs.api.result }} mobile=${{ needs.mobile.result }} backup=${{ needs.backup-restore.result }}"
-          test "${{ needs.api.result }}" = "success" && test "${{ needs.mobile.result }}" = "success" && test "${{ needs.backup-restore.result }}" = "success"
+          test "${{ needs.api.result }}" = "success" && test "${{ needs.mobile.result }}" = "success" && test "${{ needs.backup-restore.result }}" = "success" && test "${{ needs.docker-smoke.result }}" = "success"
   backup-restore:
     runs-on: ubuntu-latest
     services:
@@ -90,3 +90,33 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-16
           echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
       - run: bash scripts/test-restore.sh
+  docker-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fittrack
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: fittrack
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fittrack" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -t fittrack-api ./api
+      - name: Run image, migrate, register and call the dashboard
+        run: |
+          docker run -d --name api --network host \
+            -e DATABASE_URL=postgres://fittrack:ci@127.0.0.1:5432/fittrack \
+            -e JWT_ACCESS_SECRET=ci-secret-ci-secret-ci-secret-ci-secret \
+            -e BIND_ADDR=127.0.0.1:8080 -e FEATURES=stats,friends,leaderboard,chat \
+            fittrack-api
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8080/health
+          tok=$(curl -fsS -X POST http://127.0.0.1:8080/auth/register -H 'content-type: application/json' \
+            -d '{"email":"smoke@example.com","password":"correct-horse-battery"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+          curl -fsS http://127.0.0.1:8080/dashboard -H "authorization: Bearer $tok"
+          docker logs api | tail -5
