@@ -8,6 +8,7 @@ const ITEMS = [
   { href: '/add/food', label: 'Food' },
   { href: '/add/sleep', label: 'Sleep' },
   { href: '/add/weight', label: 'Weight' },
+  { href: '/add/body', label: 'Body scan (InBody)' },
 ] as const;
 
 export default function Log() {
