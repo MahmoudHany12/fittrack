@@ -18,7 +18,8 @@
         "android.permission.health.READ_STEPS",
         "android.permission.health.READ_EXERCISE",
         "android.permission.health.READ_SLEEP"
-      ]
+      ],
+      "package": "dev.mahmoudhany12.fittrack"
     },
     "web": {
       "output": "single",
@@ -60,7 +61,9 @@
     "ios": {
       "infoPlist": {
         "NSHealthShareUsageDescription": "FitTrack reads the health data you choose (steps, workouts, sleep) to fill in your log. It never writes to Apple Health."
-      }
+      },
+      "bundleIdentifier": "dev.mahmoudhany12.fittrack",
+      "supportsTablet": false
     }
   }
 }
