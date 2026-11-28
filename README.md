@@ -46,7 +46,7 @@ Expo Go is enough for everything except health import. HealthKit / Health Connec
 ### Fastest (today, free): Expo Go
 Works for everything except automatic Apple Health / Health Connect import.
 1. Start the backend (above) on your PC and find its Wi-Fi IP (`ipconfig` → Wi-Fi IPv4, e.g. `192.168.1.22`).
-2. `mobile/.env`: `EXPO_PUBLIC_API_URL=http://<that IP>:8080`, then `cd mobile && npx expo start --lan`.
+2. `cd mobile && npx expo start --lan` (leave `EXPO_PUBLIC_API_URL` empty: in development the app talks to the same computer on port 8080, so a changed Wi-Fi IP needs no config).
 3. On the iPhone: install **Expo Go** from the App Store, join the same Wi-Fi, scan the QR code with the Camera app (or type `exp://<IP>:8081` in Expo Go). Allow Node.js/Docker through the Windows firewall on private networks if asked.
 
 The PC must stay on for the phone to sync; entries logged while it is off are kept on the phone and sync later.
