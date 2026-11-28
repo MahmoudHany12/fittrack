@@ -1,6 +1,8 @@
-# FitTrack
+# FitTrack (GTA 6-inspired)
 
 A simple, open-source personal fitness app: sleep, diet, exercise and weight on one calm home screen.
+
+Inspired by the in-game fitness app shown for GTA 6: Strength / Cardio / Focus levels out of 4, a draining workout window, and recovery that depends on sleep and protein. **Fan project, not affiliated with or endorsed by Rockstar Games or Take-Two Interactive.** It uses no game names, art, icons or assets in the app itself; "GTA" is a trademark of Take-Two Interactive.
 
 - **v1:** accounts, workout / food / sleep / weight logging, automatic health import (HealthKit + Health Connect), dashboard with a readiness status, weekly summary, offline logging with sync, JSON/CSV export.
 - **v2 (feature flags):** game-style stats (Strength / Cardio / Focus), friends with explicit, revocable summary sharing, opt-in leaderboard, chat.
