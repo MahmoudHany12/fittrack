@@ -34,7 +34,38 @@ pub struct SleepOut {
 pub struct DietOut {
     pub kcal_eaten: i64,
     pub kcal_target: i32,
+    pub protein_g_eaten: i64,
+    pub protein_target_g: Option<i32>,
     pub label: &'static str,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct BodyOut {
+    pub weight_kg: Option<f64>,
+    pub trend: weight::Trend,
+    pub body_fat_pct: Option<f64>,
+    pub skeletal_muscle_kg: Option<f64>,
+    pub measured_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct WorkoutWindowOut {
+    pub minutes_today: i64,
+    pub goal_minutes: i64,
+    pub fraction: f64,
+}
+
+/// WHO 150 min/week is about 30 minutes a day. Steps count as an active-minute
+/// proxy at 100 steps per minute.
+pub const WORKOUT_GOAL_MINUTES: i64 = 30;
+
+pub fn workout_window(workout_minutes: i64, steps: Option<i64>) -> WorkoutWindowOut {
+    let minutes_today = workout_minutes.max(0) + steps.unwrap_or(0).max(0) / 100;
+    WorkoutWindowOut {
+        minutes_today,
+        goal_minutes: WORKOUT_GOAL_MINUTES,
+        fraction: (minutes_today as f64 / WORKOUT_GOAL_MINUTES as f64).clamp(0.0, 1.0),
+    }
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -59,7 +90,10 @@ pub struct Dashboard {
     pub diet: DietOut,
     pub exercise: ExerciseOut,
     pub weight: WeightOut,
-    /// `null` unless the `stats` feature flag is on and the user has activity.
+    pub body: BodyOut,
+    pub workout_window: WorkoutWindowOut,
+    /// `null` only when the `stats` feature flag is off; with the flag on it is
+    /// always an object (zeroed for users without activity).
     pub stats: Option<serde_json::Value>,
 }
 
@@ -87,9 +121,8 @@ async fn dashboard(
     let now = Utc::now();
     let mut d = build(&state.pool, user.0, now).await?;
     if state.config.feature("stats") {
-        d.stats = crate::stats::current_stats(&state.pool, user.0, now)
-            .await?
-            .map(|s| serde_json::to_value(s).unwrap_or_default());
+        let s = crate::stats::current_stats_or_zero(&state.pool, user.0, now).await?;
+        d.stats = Some(serde_json::to_value(s).unwrap_or_default());
     }
     Ok(Json(d))
 }
@@ -99,12 +132,14 @@ pub async fn build(
     user_id: Uuid,
     now: DateTime<Utc>,
 ) -> Result<Dashboard, AppError> {
-    let profile: Option<(Option<String>, i32)> =
-        sqlx::query_as("SELECT display_name, calorie_target FROM profiles WHERE user_id = $1")
+    let display_name: Option<String> =
+        sqlx::query_scalar("SELECT display_name FROM profiles WHERE user_id = $1")
             .bind(user_id)
             .fetch_optional(pool)
-            .await?;
-    let (display_name, calorie_target) = profile.unwrap_or((None, 2200));
+            .await?
+            .flatten();
+    let targets = crate::targets::compute_for_user(pool, user_id, now).await?;
+    let calorie_target = targets.calorie_target;
     let name = match display_name.filter(|n| !n.trim().is_empty()) {
         Some(n) => n,
         None => {
@@ -150,8 +185,8 @@ pub async fn build(
         )
     };
 
-    let kcal: (Option<f64>,) = sqlx::query_as(
-        "SELECT SUM(kcal)::float8 FROM food_logs \
+    let (kcal, protein): (Option<f64>, Option<f64>) = sqlx::query_as(
+        "SELECT SUM(kcal)::float8, SUM(protein_g)::float8 FROM food_logs \
          WHERE user_id = $1 AND deleted_at IS NULL AND logged_at >= $2 AND logged_at < $3",
     )
     .bind(user_id)
@@ -159,7 +194,9 @@ pub async fn build(
     .bind(day_start + Duration::days(1))
     .fetch_one(pool)
     .await?;
-    let kcal_eaten = kcal.0.unwrap_or(0.0).round() as i64;
+    let kcal_eaten = kcal.unwrap_or(0.0).round() as i64;
+    let protein_eaten = protein.unwrap_or(0.0).round() as i64;
+    let scan = crate::body::latest(pool, user_id, now).await?;
 
     let steps: Option<i64> = sqlx::query_scalar(
         "SELECT SUM(value)::float8::bigint FROM health_samples \
@@ -192,6 +229,8 @@ pub async fn build(
         diet: DietOut {
             kcal_eaten,
             kcal_target: calorie_target,
+            protein_g_eaten: protein_eaten,
+            protein_target_g: targets.protein_g,
             label: diet_label(kcal_eaten, calorie_target, now.hour()),
         },
         exercise: ExerciseOut {
@@ -203,6 +242,14 @@ pub async fn build(
             kg: trend.current_kg,
             trend: trend.trend,
         },
+        body: BodyOut {
+            weight_kg: trend.current_kg,
+            trend: trend.trend,
+            body_fat_pct: scan.as_ref().and_then(|s| s.body_fat_pct),
+            skeletal_muscle_kg: scan.as_ref().and_then(|s| s.skeletal_muscle_kg),
+            measured_at: scan.as_ref().map(|s| s.measured_at),
+        },
+        workout_window: workout_window(secs_today / 60, steps),
         stats: None, // filled by the handler when the `stats` flag is on
     })
 }
@@ -210,6 +257,17 @@ pub async fn build(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workout_window_adds_steps_and_clamps() {
+        assert_eq!(workout_window(0, None).minutes_today, 0);
+        assert_eq!(workout_window(0, None).fraction, 0.0);
+        let w = workout_window(15, Some(1500));
+        assert_eq!((w.minutes_today, w.goal_minutes), (30, 30));
+        assert_eq!(w.fraction, 1.0);
+        assert_eq!(workout_window(10, Some(999)).minutes_today, 19);
+        assert_eq!(workout_window(120, None).fraction, 1.0);
+    }
 
     #[test]
     fn diet_labels() {

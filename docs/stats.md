@@ -44,3 +44,18 @@ Then, for each stat:
 3. Round and clamp to 0..100.
 
 Workouts or sleep in the future and anything older than the window are ignored.
+
+## Body composition boost and the dashboard
+
+When the user has a body scan with skeletal muscle mass, **Strength** gets a
+small boost added after steps 1-3: with `r = skeletal_muscle_kg / weight_kg`,
+`boost = 10 * clamp((r - lo) / (hi - lo), 0, 1)` where `(lo, hi)` is
+`(0.35, 0.45)` for male, `(0.28, 0.38)` for female and `(0.315, 0.415)` when
+the profile has no sex. The result is clamped to 100. Cardio and Focus are
+unchanged.
+
+On `GET /dashboard` with the `stats` flag on, `stats` is **always an object**:
+users with no workouts or sleep get `Stats::zero()` (value 0, level 1,
+progress 0 per stat; `stats::current_stats_or_zero`). `GET /stats` keeps
+returning `null` for them, and the zero object is not stored in
+`character_stats`.

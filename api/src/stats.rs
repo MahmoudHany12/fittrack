@@ -38,6 +38,31 @@ pub struct SleepInput {
 pub struct Inputs {
     pub workouts: Vec<WorkoutInput>,
     pub sleeps: Vec<SleepInput>,
+    /// Latest body scan with skeletal muscle mass, if any.
+    pub muscle: Option<MuscleInput>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MuscleInput {
+    pub skeletal_muscle_kg: f64,
+    pub weight_kg: f64,
+    /// `None` when the profile has no sex; midpoint thresholds are used.
+    pub male: Option<bool>,
+}
+
+/// Strength boost (0..=10) from skeletal-muscle-mass relative to body weight:
+/// ratio >= 0.45 male / 0.38 female gives +10, scaled linearly from 0.35 / 0.28.
+pub fn muscle_boost(m: &MuscleInput) -> f64 {
+    if m.weight_kg <= 0.0 {
+        return 0.0;
+    }
+    let (lo, hi) = match m.male {
+        Some(true) => (0.35, 0.45),
+        Some(false) => (0.28, 0.38),
+        None => (0.315, 0.415),
+    };
+    let ratio = m.skeletal_muscle_kg / m.weight_kg;
+    10.0 * ((ratio - lo) / (hi - lo)).clamp(0.0, 1.0)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -52,6 +77,18 @@ pub struct Stats {
     pub strength: Stat,
     pub cardio: Stat,
     pub focus: Stat,
+}
+
+impl Stats {
+    /// All-zero stats (level 1, progress 0) for users with no activity yet.
+    pub fn zero() -> Self {
+        let z = make_stat(0.0);
+        Stats {
+            strength: z,
+            cardio: z,
+            focus: z,
+        }
+    }
 }
 
 /// Level 1-4 from a 0-100 value.
@@ -148,8 +185,14 @@ pub fn compute_stats(inputs: &Inputs, now: DateTime<Utc>) -> Stats {
     };
     let finish = |raw: f64| make_stat((decay(raw) * (1.0 - penalty)).clamp(0.0, 100.0));
 
+    let boost = inputs.muscle.as_ref().map_or(0.0, muscle_boost);
+    let strength = finish(strength_raw);
     Stats {
-        strength: finish(strength_raw),
+        strength: if boost > 0.0 {
+            make_stat(f64::from(strength.value) + boost)
+        } else {
+            strength
+        },
         cardio: finish(cardio_raw),
         focus: finish(focus_raw),
     }
@@ -179,7 +222,7 @@ pub async fn current_stats(
     .bind(now)
     .fetch_all(pool)
     .await?;
-    let workouts = rows
+    let workouts: Vec<WorkoutInput> = rows
         .into_iter()
         .map(|(started_at, duration_s, strength, cardio)| {
             let minutes = f64::from(duration_s.max(0)) / 60.0;
@@ -208,15 +251,39 @@ pub async fn current_stats(
     .bind(now)
     .fetch_all(pool)
     .await?;
-    let sleeps = sleep_rows
+    let sleeps: Vec<SleepInput> = sleep_rows
         .into_iter()
         .map(|(wake_time, minutes)| SleepInput { wake_time, minutes })
         .collect();
 
-    let inputs = Inputs { workouts, sleeps };
-    if inputs.workouts.is_empty() && inputs.sleeps.is_empty() {
+    if workouts.is_empty() && sleeps.is_empty() {
         return Ok(None);
     }
+    let scan: Option<(f64, f64)> = sqlx::query_as(
+        "SELECT skeletal_muscle_kg, weight_kg FROM body_compositions \
+         WHERE user_id = $1 AND deleted_at IS NULL AND skeletal_muscle_kg IS NOT NULL \
+           AND measured_at <= $2 \
+         ORDER BY measured_at DESC LIMIT 1",
+    )
+    .bind(user_id)
+    .bind(now)
+    .fetch_optional(pool)
+    .await?;
+    let sex: Option<String> = sqlx::query_scalar("SELECT sex FROM profiles WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?
+        .flatten();
+    let muscle = scan.map(|(skeletal_muscle_kg, weight_kg)| MuscleInput {
+        skeletal_muscle_kg,
+        weight_kg,
+        male: sex.map(|s| s == "male"),
+    });
+    let inputs = Inputs {
+        workouts,
+        sleeps,
+        muscle,
+    };
     let stats = compute_stats(&inputs, now);
     sqlx::query(
         "INSERT INTO character_stats (user_id, day, strength, cardio, focus, computed_at) \
@@ -233,6 +300,17 @@ pub async fn current_stats(
     .execute(pool)
     .await?;
     Ok(Some(stats))
+}
+
+/// Like [`current_stats`] but never `None`: users with no activity get [`Stats::zero`].
+pub async fn current_stats_or_zero(
+    pool: &PgPool,
+    user_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<Stats, sqlx::Error> {
+    Ok(current_stats(pool, user_id, now)
+        .await?
+        .unwrap_or_else(Stats::zero))
 }
 
 async fn get_stats(
@@ -281,7 +359,48 @@ mod tests {
         Inputs {
             workouts: w,
             sleeps: s,
+            muscle: None,
         }
+    }
+
+    #[test]
+    fn zero_stats_are_level_one() {
+        let z = Stats::zero();
+        for s in [z.strength, z.cardio, z.focus] {
+            assert_eq!((s.value, s.level), (0, 1));
+            assert_eq!(s.progress, 0.0);
+        }
+    }
+
+    #[test]
+    fn muscle_boost_scales_by_sex() {
+        let m = |smm, male| MuscleInput {
+            skeletal_muscle_kg: smm,
+            weight_kg: 100.0,
+            male,
+        };
+        assert_eq!(muscle_boost(&m(45.0, Some(true))), 10.0);
+        assert_eq!(muscle_boost(&m(50.0, Some(true))), 10.0);
+        assert_eq!(muscle_boost(&m(35.0, Some(true))), 0.0);
+        assert!((muscle_boost(&m(40.0, Some(true))) - 5.0).abs() < 1e-9);
+        assert_eq!(muscle_boost(&m(38.0, Some(false))), 10.0);
+        assert!((muscle_boost(&m(33.0, Some(false))) - 5.0).abs() < 1e-9);
+        assert_eq!(muscle_boost(&m(20.0, Some(false))), 0.0);
+    }
+
+    #[test]
+    fn muscle_boost_is_added_to_strength_only() {
+        let base = compute_stats(&inputs(vec![lift(1, 10)], vec![]), now());
+        let mut i = inputs(vec![lift(1, 10)], vec![]);
+        i.muscle = Some(MuscleInput {
+            skeletal_muscle_kg: 46.0,
+            weight_kg: 100.0,
+            male: Some(true),
+        });
+        let boosted = compute_stats(&i, now());
+        assert_eq!(boosted.strength.value, base.strength.value + 10);
+        assert_eq!(boosted.cardio, base.cardio);
+        assert_eq!(boosted.focus, base.focus);
     }
 
     #[test]
