@@ -355,3 +355,12 @@ describe("daily step totals", () => {
     );
   });
 });
+
+describe('getHealthProvider in Expo Go', () => {
+  it('never loads native modules and reports unavailable', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getHealthProvider } = require('./provider');
+    const p = getHealthProvider('ios', true);
+    expect(p.available).toBe(false);
+  });
+});
