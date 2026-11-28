@@ -9,8 +9,8 @@ The detailed contracts and conventions live in [spec.md](spec.md); this page is 
 | Health check | `GET /health` |
 | Auth | `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`; `GET /me` |
 | Profile | `GET/PUT /profile` |
-| Workouts | `GET /exercises?q=`, `POST /exercises`; `GET/POST /workouts`, `PUT/DELETE /workouts/{id}` |
 | Food | `GET /foods/search?q=`, `GET /foods/catalog?category=`, `GET /foods/categories`, `POST /foods`; `GET/POST /food-logs`, `PUT/DELETE /food-logs/{id}`, `GET /food-logs/summary?date=`; `GET /favorites`, `PUT/DELETE /favorites/{food_id}` |
+| Workouts | `GET /exercises?q=` (no `q` returns the whole catalog plus your own, ordered by muscle group then name, max 500), `POST /exercises`; `GET/POST /workouts`, `PUT/DELETE /workouts/{id}` |
 | Sleep | `GET/POST /sleep`, `PUT/DELETE /sleep/{id}` |
 | Weight | `GET/POST /weight`, `PUT/DELETE /weight/{id}` |
 | Dashboard | `GET /dashboard` |

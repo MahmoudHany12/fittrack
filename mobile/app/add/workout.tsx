@@ -1,9 +1,15 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, SectionList, StyleSheet, Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
+import {
+  buildSections,
+  groupFilters,
+  groupLabel,
+  type GroupFilter,
+} from '@/api/exerciseBrowse';
 import { parsePrefill } from '@/api/program';
 import { PROTEIN_TIP, REST_MESSAGE, bestLine, getProgression, type PersonalBest } from '@/api/progression';
 import {
@@ -128,6 +134,7 @@ export default function AddWorkout() {
   const workoutId = useRef(newId());
 
   const [search, setSearch] = useState('');
+  const [groupFilter, setGroupFilter] = useState<GroupFilter>('all');
   // null until the user edits; until then the program prefill (if any) is shown.
   const [edited, setEdited] = useState<Entry[] | null>(null);
   const [durationMin, setDurationMin] = useState(30);
@@ -159,7 +166,7 @@ export default function AddWorkout() {
     return { recentIds: ids.slice(0, 6), lastSet: last };
   }, [recent.data]);
 
-  const catalog = results.data ?? [];
+  const catalog = useMemo(() => results.data ?? [], [results.data]);
   const recentExercises = useMemo(() => {
     const byId = new Map(catalog.map((e) => [e.id, e]));
     return recentIds.map((id) => byId.get(id)).filter((e): e is Exercise => !!e);
@@ -206,7 +213,12 @@ export default function AddWorkout() {
     };
   }, [saved, router]);
 
-  const shown = query ? catalog.slice(0, 6) : [];
+  const filters = useMemo(() => groupFilters(catalog), [catalog]);
+  const sections = useMemo(
+    () => buildSections(catalog, groupFilter, query),
+    [catalog, groupFilter, query],
+  );
+  const pickedIds = useMemo(() => new Set(entries.map((e) => e.exercise.id)), [entries]);
   const exactMatch = catalog.some((e) => e.name.toLowerCase() === query.toLowerCase());
 
   function addExercise(exercise: Exercise) {
@@ -328,12 +340,51 @@ export default function AddWorkout() {
           </View>
         ) : null}
 
-        {shown.length > 0 ? (
-          <View style={styles.wrap}>
-            {shown.map((e) => (
-              <Chip key={e.id} label={e.name} onPress={() => addExercise(e)} />
-            ))}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.filters}
+        >
+          {filters.map((g) => (
+            <Chip
+              key={g}
+              label={g === 'all' ? 'All' : groupLabel(g)}
+              active={g === groupFilter}
+              onPress={() => setGroupFilter(g)}
+            />
+          ))}
+        </ScrollView>
+
+        {sections.length > 0 ? (
+          <View style={[styles.picker, { borderColor: t.border, backgroundColor: t.card }]}>
+            <SectionList
+              sections={sections}
+              keyExtractor={(e) => e.id}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+              stickySectionHeadersEnabled
+              initialNumToRender={24}
+              renderSectionHeader={({ section }) => (
+                <View style={[styles.sectionHeader, { backgroundColor: t.card }]}>
+                  <Caption>{section.title}</Caption>
+                </View>
+              )}
+              renderItem={({ item }) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add ${item.name}`}
+                  onPress={() => addExercise(item)}
+                  style={[styles.item, { borderColor: t.border }]}
+                >
+                  <Text style={{ color: t.text, fontSize: fontSizes.body }}>{item.name}</Text>
+                  {pickedIds.has(item.id) ? <Caption>Added</Caption> : null}
+                </Pressable>
+              )}
+            />
           </View>
+        ) : results.isLoading ? (
+          <Caption>Loading exercises...</Caption>
         ) : null}
 
         {query && !exactMatch && !results.isFetching ? (
@@ -456,6 +507,17 @@ export default function AddWorkout() {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  filters: { flexDirection: 'row', gap: 8 },
+  picker: { height: 320, borderWidth: 1, borderRadius: radius, overflow: 'hidden' },
+  sectionHeader: { paddingHorizontal: spacing(1.5), paddingVertical: spacing(1) },
+  item: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+    paddingHorizontal: spacing(1.5),
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   chip: {
     borderWidth: 1,
     borderRadius: radius,
