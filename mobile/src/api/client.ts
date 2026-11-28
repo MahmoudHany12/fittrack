@@ -1,9 +1,20 @@
+import Constants from 'expo-constants';
+
 import { clearTokens, loadTokens, saveTokens } from './tokens';
 
-export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080').replace(
-  /\/+$/,
-  '',
-);
+/**
+ * API base URL. EXPO_PUBLIC_API_URL wins (production builds). In development, when it is
+ * not set, use the machine that serves the JS bundle (Expo's hostUri, e.g. "10.0.0.5:8081")
+ * on port 8080, so the app keeps working when the computer's Wi-Fi IP changes.
+ */
+export function resolveApiUrl(envUrl: string | undefined, hostUri: string | undefined | null): string {
+  if (envUrl && envUrl.trim()) return envUrl.trim().replace(/\/+$/, '');
+  const host = hostUri?.split(':')[0];
+  if (host) return `http://${host}:8080`;
+  return 'http://localhost:8080';
+}
+
+export const API_URL = resolveApiUrl(process.env.EXPO_PUBLIC_API_URL, Constants.expoConfig?.hostUri);
 
 export type TokenResponse = {
   access_token: string;

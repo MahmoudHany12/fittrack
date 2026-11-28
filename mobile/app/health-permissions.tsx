@@ -111,6 +111,13 @@ export default function HealthPermissions() {
           Each type is separate and off until you turn it on. You can turn one off at any time;
           that stops new imports and keeps what was already imported.
         </Body>
+        {!provider.available ? (
+          <Caption warn>
+            Automatic import from Apple Health or Health Connect needs the installed FitTrack app
+            (TestFlight or an APK). It can&apos;t run inside Expo Go. You can still log everything
+            by hand.
+          </Caption>
+        ) : null}
         {HEALTH_CATEGORIES.map((c) => (
           <Card key={c}>
             <View style={styles.row}>
