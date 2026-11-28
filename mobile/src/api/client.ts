@@ -4,13 +4,18 @@ import { clearTokens, loadTokens, saveTokens } from './tokens';
 
 /**
  * API base URL. EXPO_PUBLIC_API_URL wins (production builds). In development, when it is
- * not set, use the machine that serves the JS bundle (Expo's hostUri, e.g. "10.0.0.5:8081")
- * on port 8080, so the app keeps working when the computer's Wi-Fi IP changes.
+ * not set, go through the dev server that serves the JS bundle (Expo's hostUri, e.g.
+ * "10.0.0.5:8081" or a tunnel host): metro.config.js proxies /api/* to the local API. So the
+ * app works on any Wi-Fi and with `expo start --tunnel`, with no IP to configure.
  */
 export function resolveApiUrl(envUrl: string | undefined, hostUri: string | undefined | null): string {
   if (envUrl && envUrl.trim()) return envUrl.trim().replace(/\/+$/, '');
-  const host = hostUri?.split(':')[0];
-  if (host) return `http://${host}:8080`;
+  const host = hostUri?.trim().replace(/\/+$/, '');
+  if (host) {
+    // LAN dev servers have an explicit port (http); tunnel hosts have none and are https-only.
+    const scheme = /:\d+$/.test(host) ? 'http' : 'https';
+    return `${scheme}://${host}/api`;
+  }
   return 'http://localhost:8080';
 }
 
