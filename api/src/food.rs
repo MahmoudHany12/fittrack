@@ -8,6 +8,8 @@
 //!   `Extension<FoodProviders>`; tests supply fakes.
 //! - A user's "day" is the UTC date for now.
 
+#[cfg(test)]
+mod catalog;
 pub mod providers;
 
 use crate::{auth::AuthUser, error::AppError, extract::ValidatedJson, AppState};
@@ -32,6 +34,8 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/foods/search", get(search))
         .route("/foods/recent", get(recent))
+        .route("/foods/catalog", get(catalog))
+        .route("/foods/categories", get(categories))
         .route("/foods", post(create_food))
         .route("/food-logs", get(list_logs).post(create_log))
         .route("/food-logs/summary", get(summary))
@@ -100,8 +104,12 @@ fn field_error(field: &str, code: &str) -> FoodError {
 
 // ---------- types ----------
 
-const FOOD_COLS: &str =
-    "f.id, f.name, f.brand, f.kcal, f.protein_g, f.carbs_g, f.fat_g, f.serving_g, f.source, f.external_id";
+const FOOD_COLS: &str = "f.id, f.name, f.brand, f.kcal, f.protein_g, f.carbs_g, f.fat_g, \
+     f.serving_g, f.source, f.external_id, f.category, f.name_ar";
+
+/// Columns for `RETURNING` on inserts into `foods` (no table alias).
+const FOOD_RETURNING: &str = "RETURNING id, name, brand, kcal, protein_g, carbs_g, fat_g, \
+     serving_g, source, external_id, category, name_ar";
 
 #[derive(Serialize, sqlx::FromRow, Clone, Debug)]
 pub struct Food {
@@ -115,6 +123,10 @@ pub struct Food {
     pub serving_g: f64,
     pub source: String,
     pub external_id: Option<String>,
+    /// Built-in catalog section (e.g. "Egyptian"); `null` for other sources.
+    pub category: Option<String>,
+    /// Optional Arabic name (built-in catalog).
+    pub name_ar: Option<String>,
 }
 
 #[derive(Serialize, sqlx::FromRow, Debug)]
@@ -178,6 +190,10 @@ struct SearchQuery {
     q: Option<String>,
 }
 
+/// Arabic letter variants folded together when matching `name_ar`.
+const AR_FROM: &str = "أإآىة";
+const AR_TO: &str = "ااايه";
+
 fn like_escape(q: &str) -> String {
     let mut out = String::with_capacity(q.len() + 2);
     out.push('%');
@@ -192,15 +208,15 @@ fn like_escape(q: &str) -> String {
 }
 
 async fn upsert_external(pool: &PgPool, f: &ExternalFood) -> Result<Food, sqlx::Error> {
-    sqlx::query_as::<_, Food>(
+    sqlx::query_as::<_, Food>(&format!(
         "INSERT INTO foods (name, brand, kcal, protein_g, carbs_g, fat_g, serving_g, source, external_id) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
          ON CONFLICT (source, external_id) WHERE external_id IS NOT NULL DO UPDATE SET \
            name = EXCLUDED.name, brand = EXCLUDED.brand, kcal = EXCLUDED.kcal, \
            protein_g = EXCLUDED.protein_g, carbs_g = EXCLUDED.carbs_g, fat_g = EXCLUDED.fat_g, \
            serving_g = EXCLUDED.serving_g \
-         RETURNING id, name, brand, kcal, protein_g, carbs_g, fat_g, serving_g, source, external_id",
-    )
+         {FOOD_RETURNING}"
+    ))
     .bind(&f.name)
     .bind(&f.brand)
     .bind(f.kcal)
@@ -229,11 +245,15 @@ async fn search(
         return Err(field_error("q", "length"));
     }
 
-    // Own custom foods first, then cached external foods.
+    // Own custom foods first, then the built-in catalog, then cached external
+    // foods. Arabic names match with common letter variants folded
+    // (أ/إ/آ -> ا, ى -> ي, ة -> ه).
     let mut results: Vec<Food> = sqlx::query_as(&format!(
         "SELECT {FOOD_COLS} FROM foods f \
-         WHERE (f.name ILIKE $1 OR f.brand ILIKE $1) AND (f.owner_id IS NULL OR f.owner_id = $2) \
-         ORDER BY (f.owner_id IS NULL), length(f.name), f.name LIMIT 25"
+         WHERE (f.name ILIKE $1 OR f.brand ILIKE $1 \
+                OR translate(f.name_ar, '{AR_FROM}', '{AR_TO}') ILIKE translate($1, '{AR_FROM}', '{AR_TO}')) \
+           AND (f.owner_id IS NULL OR f.owner_id = $2) \
+         ORDER BY (f.owner_id IS NULL), (f.source <> 'builtin'), length(f.name), f.name LIMIT 25"
     ))
     .bind(like_escape(q))
     .bind(user.0)
@@ -255,6 +275,61 @@ async fn search(
         }
     }
     Ok(Json(results))
+}
+
+// ---------- built-in catalog ----------
+
+#[derive(Deserialize)]
+struct CatalogQuery {
+    category: Option<String>,
+}
+
+/// `?category=` is optional; blank means "all", longer than 64 chars is a 422.
+fn catalog_category(raw: Option<&str>) -> Result<Option<String>, FoodError> {
+    let Some(c) = raw.map(str::trim).filter(|c| !c.is_empty()) else {
+        return Ok(None);
+    };
+    if c.chars().count() > 64 {
+        return Err(field_error("category", "length"));
+    }
+    Ok(Some(c.to_string()))
+}
+
+async fn catalog(
+    State(state): State<AppState>,
+    _user: AuthUser,
+    Query(params): Query<CatalogQuery>,
+) -> Result<Json<Vec<Food>>, FoodError> {
+    let category = catalog_category(params.category.as_deref())?;
+    let foods = sqlx::query_as(&format!(
+        "SELECT {FOOD_COLS} FROM foods f \
+         WHERE f.source = 'builtin' AND ($1::text IS NULL OR f.category = $1) \
+         ORDER BY f.category, f.name, f.id"
+    ))
+    .bind(category)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(foods))
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+struct Category {
+    name: String,
+    count: i64,
+}
+
+async fn categories(
+    State(state): State<AppState>,
+    _user: AuthUser,
+) -> Result<Json<Vec<Category>>, FoodError> {
+    let cats = sqlx::query_as(
+        "SELECT category AS name, COUNT(*) AS count FROM foods \
+         WHERE source = 'builtin' AND category IS NOT NULL \
+         GROUP BY category ORDER BY category",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(cats))
 }
 
 async fn recent(
@@ -307,11 +382,11 @@ async fn create_food(
         .brand
         .map(|b| b.trim().to_string())
         .filter(|b| !b.is_empty());
-    let food = sqlx::query_as::<_, Food>(
+    let food = sqlx::query_as::<_, Food>(&format!(
         "INSERT INTO foods (name, brand, kcal, protein_g, carbs_g, fat_g, serving_g, source, owner_id) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'custom', $8) \
-         RETURNING id, name, brand, kcal, protein_g, carbs_g, fat_g, serving_g, source, external_id",
-    )
+         {FOOD_RETURNING}"
+    ))
     .bind(name)
     .bind(brand)
     .bind(req.kcal)
@@ -568,4 +643,26 @@ async fn remove_favorite(
         .execute(&state.pool)
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn arabic_fold_tables_line_up() {
+        assert_eq!(AR_FROM.chars().count(), AR_TO.chars().count());
+    }
+
+    #[test]
+    fn catalog_category_param() {
+        assert_eq!(catalog_category(None).unwrap(), None);
+        assert_eq!(catalog_category(Some("  ")).unwrap(), None);
+        assert_eq!(
+            catalog_category(Some(" Egyptian ")).unwrap().as_deref(),
+            Some("Egyptian")
+        );
+        assert!(catalog_category(Some(&"x".repeat(64))).is_ok());
+        assert!(catalog_category(Some(&"x".repeat(65))).is_err());
+    }
 }

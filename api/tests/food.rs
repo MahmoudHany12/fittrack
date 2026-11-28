@@ -143,6 +143,16 @@ fn approx(v: &Value, expected: f64) {
     );
 }
 
+/// Search results without the seeded built-in catalog rows.
+fn not_builtin(v: &Value) -> Vec<Value> {
+    v.as_array()
+        .unwrap_or_else(|| panic!("not an array: {v}"))
+        .iter()
+        .filter(|f| f["source"] != "builtin")
+        .cloned()
+        .collect()
+}
+
 fn today() -> String {
     chrono::Utc::now().format("%Y-%m-%d").to_string()
 }
@@ -317,7 +327,7 @@ async fn search_merges_provider_results_and_caches_them(pool: PgPool) {
     // The failing provider degrades gracefully; the fake still contributes.
     let (s, res) = call(&app, Method::GET, "/foods/search?q=oat", None, Some(&t)).await;
     assert_eq!(s, StatusCode::OK, "{res}");
-    let res = res.as_array().unwrap();
+    let res = not_builtin(&res);
     assert_eq!(res.len(), 2);
     assert_eq!(res[0]["id"], mine["id"], "own custom foods come first");
     assert_eq!(res[1]["name"], "Oat Granola");
@@ -326,7 +336,7 @@ async fn search_merges_provider_results_and_caches_them(pool: PgPool) {
 
     // Repeat search: upsert keeps one row and the same id; no duplicates.
     let (_, res2) = call(&app, Method::GET, "/foods/search?q=oat", None, Some(&t)).await;
-    assert_eq!(res2.as_array().unwrap().len(), 2);
+    assert_eq!(not_builtin(&res2).len(), 2);
     let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM foods WHERE source = 'off'")
         .fetch_one(&pool)
         .await
@@ -356,6 +366,7 @@ async fn search_merges_provider_results_and_caches_them(pool: PgPool) {
         Some(&t),
     )
     .await;
+    let res3 = not_builtin(&res3);
     approx(&res3[0]["kcal"], 300.0);
     assert_eq!(res3[0]["id"], cached_id.as_str());
     let (_, logs) = call(
@@ -371,12 +382,8 @@ async fn search_merges_provider_results_and_caches_them(pool: PgPool) {
     // Another user finds the shared cache but never your custom food.
     let t2 = token(&app, "bob@example.com").await;
     let (_, res4) = call(&app, Method::GET, "/foods/search?q=oat", None, Some(&t2)).await;
-    let names: Vec<&str> = res4
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|f| f["name"].as_str().unwrap())
-        .collect();
+    let res4 = not_builtin(&res4);
+    let names: Vec<&str> = res4.iter().map(|f| f["name"].as_str().unwrap()).collect();
     assert_eq!(names, vec!["Oat Granola"]);
 }
 
@@ -605,7 +612,7 @@ async fn cross_user_access_is_404(pool: PgPool) {
     .await;
     approx(&sum["kcal"], 0.0);
     let (_, res) = call(&app, Method::GET, "/foods/search?q=stew", None, Some(&bob)).await;
-    assert_eq!(res.as_array().unwrap().len(), 0);
+    assert_eq!(not_builtin(&res).len(), 0);
 
     // Ann's log is untouched.
     let (_, logs) = call(
@@ -684,4 +691,177 @@ async fn client_supplied_id_is_idempotent(pool: PgPool) {
     )
     .await;
     assert_eq!(logs[0]["food_name"], "Pasta");
+}
+
+#[sqlx::test]
+async fn catalog_lists_builtin_foods_ordered(pool: PgPool) {
+    let app = router(pool);
+    let t = token(&app, "ann@example.com").await;
+    // Someone's custom food never shows up in the catalog.
+    custom_food(&app, &t, "My koshari", 500.0).await;
+
+    let (s, all) = call(&app, Method::GET, "/foods/catalog", None, Some(&t)).await;
+    assert_eq!(s, StatusCode::OK, "{all}");
+    let all = all.as_array().unwrap();
+    assert!(all.len() >= 250, "only {} builtin foods", all.len());
+    assert!(all.iter().all(|f| f["source"] == "builtin"));
+    assert!(all.iter().all(|f| f["category"].is_string()));
+    let keys: Vec<(String, String)> = all
+        .iter()
+        .map(|f| {
+            (
+                f["category"].as_str().unwrap().to_string(),
+                f["name"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    // Postgres collation may differ from byte order on names; categories must be grouped.
+    let cats: Vec<&String> = keys.iter().map(|(c, _)| c).collect();
+    let mut grouped = cats.clone();
+    grouped.dedup();
+    let mut unique = grouped.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(grouped.len(), unique.len(), "categories are not contiguous");
+
+    let koshari = all
+        .iter()
+        .find(|f| f["external_id"] == "builtin:koshari")
+        .expect("koshari is seeded");
+    assert_eq!(koshari["category"], "Egyptian");
+    assert_eq!(koshari["name_ar"], "كشري");
+    assert!(koshari["serving_g"].as_f64().unwrap() > 0.0);
+
+    let (s, _) = call(&app, Method::GET, "/foods/catalog", None, None).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test]
+async fn catalog_category_filter_and_categories(pool: PgPool) {
+    let app = router(pool);
+    let t = token(&app, "ann@example.com").await;
+
+    let (s, cats) = call(&app, Method::GET, "/foods/categories", None, Some(&t)).await;
+    assert_eq!(s, StatusCode::OK, "{cats}");
+    let cats = cats.as_array().unwrap();
+    let egyptian = cats
+        .iter()
+        .find(|c| c["name"] == "Egyptian")
+        .expect("Egyptian category");
+    let n = egyptian["count"].as_i64().unwrap();
+    assert!(n >= 70, "Egyptian has {n}");
+    assert!(cats.iter().any(|c| c["name"] == "Supplements"));
+
+    let (s, eg) = call(
+        &app,
+        Method::GET,
+        "/foods/catalog?category=Egyptian",
+        None,
+        Some(&t),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{eg}");
+    let eg = eg.as_array().unwrap();
+    assert_eq!(eg.len() as i64, n);
+    assert!(eg.iter().all(|f| f["category"] == "Egyptian"));
+
+    let (s, multi) = call(
+        &app,
+        Method::GET,
+        "/foods/catalog?category=Nuts%20%26%20seeds",
+        None,
+        Some(&t),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(!multi.as_array().unwrap().is_empty());
+
+    let (s, none) = call(
+        &app,
+        Method::GET,
+        "/foods/catalog?category=Nope",
+        None,
+        Some(&t),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(none.as_array().unwrap().len(), 0);
+
+    let long = "x".repeat(65);
+    let (s, body) = call(
+        &app,
+        Method::GET,
+        &format!("/foods/catalog?category={long}"),
+        None,
+        Some(&t),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert!(body["error"]["fields"]["category"].is_array());
+
+    let (s, _) = call(&app, Method::GET, "/foods/categories", None, None).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test]
+async fn search_returns_builtin_before_external(pool: PgPool) {
+    let koshari_ext = ExternalFood {
+        source: "off".into(),
+        external_id: "777".into(),
+        name: "Koshari mix".into(),
+        brand: Some("Acme".into()),
+        kcal: 350.0,
+        protein_g: 10.0,
+        carbs_g: 70.0,
+        fat_g: 3.0,
+        serving_g: 100.0,
+    };
+    let app = router_with(pool, vec![fake(vec![koshari_ext])]);
+    let t = token(&app, "ann@example.com").await;
+    let mine = custom_food(&app, &t, "Koshari leftovers", 400.0).await;
+
+    let (s, res) = call(&app, Method::GET, "/foods/search?q=koshari", None, Some(&t)).await;
+    assert_eq!(s, StatusCode::OK, "{res}");
+    let res = res.as_array().unwrap();
+    let sources: Vec<&str> = res.iter().map(|f| f["source"].as_str().unwrap()).collect();
+    assert_eq!(
+        res[0]["id"], mine["id"],
+        "own custom foods first: {sources:?}"
+    );
+    let first_builtin = sources.iter().position(|s| *s == "builtin").unwrap();
+    let first_off = sources.iter().position(|s| *s == "off").unwrap();
+    assert!(first_builtin < first_off, "{sources:?}");
+    assert!(res
+        .iter()
+        .any(|f| f["external_id"] == "builtin:koshari" && f["category"] == "Egyptian"));
+
+    // Arabic search, with hamza variants folded (ارز matches أرز).
+    for q in ["كشري", "ارز", "أرز"] {
+        let uri = format!("/foods/search?q={}", urlencode(q));
+        let (s, res) = call(&app, Method::GET, &uri, None, Some(&t)).await;
+        assert_eq!(s, StatusCode::OK, "{q}: {res}");
+        let hits = res.as_array().unwrap();
+        assert!(
+            hits.iter()
+                .any(|f| f["source"] == "builtin" && f["name_ar"].as_str().is_some()),
+            "{q}: {res}"
+        );
+    }
+    let (_, rice) = call(
+        &app,
+        Method::GET,
+        &format!("/foods/search?q={}", urlencode("ارز")),
+        None,
+        Some(&t),
+    )
+    .await;
+    assert!(rice
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|f| f["external_id"] == "builtin:white-rice"));
+}
+
+fn urlencode(s: &str) -> String {
+    s.bytes().map(|b| format!("%{b:02X}")).collect()
 }
