@@ -1,6 +1,6 @@
 import { authedRequest } from './client';
 
-export type FoodSource = 'usda' | 'off' | 'custom';
+export type FoodSource = 'usda' | 'off' | 'custom' | 'builtin';
 export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
 /** Nutrient values are per serving (`serving_g` grams). */
@@ -15,7 +15,13 @@ export type Food = {
   serving_g: number;
   source: FoodSource;
   external_id: string | null;
+  /** Built-in catalog section, e.g. "Egyptian"; null for other sources. */
+  category?: string | null;
+  /** Optional Arabic name (built-in catalog). */
+  name_ar?: string | null;
 };
+
+export type FoodCategory = { name: string; count: number };
 
 export type FoodLog = {
   id: string;
@@ -55,6 +61,8 @@ export const foodKeys = {
   search: (q: string) => ['food', 'search', q] as const,
   recent: ['food', 'recent'] as const,
   favorites: ['food', 'favorites'] as const,
+  categories: ['food', 'categories'] as const,
+  catalog: (category: string) => ['food', 'catalog', category] as const,
   logs: (date: string) => ['food', 'logs', date] as const,
   summary: (date: string) => ['food', 'summary', date] as const,
 };
@@ -112,6 +120,38 @@ export function searchFoods(q: string): Promise<Food[]> {
 
 export function recentFoods(): Promise<Food[]> {
   return authedRequest<Food[]>('/foods/recent');
+}
+
+/** Category chip selected when the food screen opens. */
+export const DEFAULT_CATEGORY = 'Egyptian';
+
+export function listCategories(): Promise<FoodCategory[]> {
+  return authedRequest<FoodCategory[]>('/foods/categories');
+}
+
+/** Built-in catalog foods, ordered by category then name; all categories when omitted. */
+export function listCatalog(category?: string): Promise<Food[]> {
+  const c = category?.trim();
+  return authedRequest<Food[]>(c ? `/foods/catalog?category=${encodeURIComponent(c)}` : '/foods/catalog');
+}
+
+/** The default category first, then the rest in server (alphabetical) order. */
+export function orderCategories(cats: FoodCategory[], first: string = DEFAULT_CATEGORY): FoodCategory[] {
+  const head = cats.filter((c) => c.name === first);
+  return [...head, ...cats.filter((c) => c.name !== first)];
+}
+
+/** Keeps the chosen category if it still exists, else falls back to the first chip. */
+export function pickCategory(selected: string | null, ordered: FoodCategory[]): string {
+  if (selected && ordered.some((c) => c.name === selected)) return selected;
+  return ordered[0]?.name ?? DEFAULT_CATEGORY;
+}
+
+const round1 = (v: number) => Math.round(v * 10) / 10;
+
+/** "P 17 · C 98 · F 11" per serving, one decimal at most. */
+export function formatMacros(food: Pick<Food, 'protein_g' | 'carbs_g' | 'fat_g'>): string {
+  return `P ${round1(food.protein_g)} · C ${round1(food.carbs_g)} · F ${round1(food.fat_g)}`;
 }
 
 export function createFood(food: NewFood): Promise<Food> {

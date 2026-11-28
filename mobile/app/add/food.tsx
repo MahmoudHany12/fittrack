@@ -15,11 +15,16 @@ import {
 import {
   addFavorite,
   foodKeys,
+  formatMacros,
   formatServing,
   isSearchable,
+  listCatalog,
+  listCategories,
   listFoodLogs,
   listFavorites,
   newId,
+  orderCategories,
+  pickCategory,
   previewTotals,
   recentFoods,
   removeFavorite,
@@ -27,6 +32,7 @@ import {
   stepServings,
   todayUtc,
   type Food,
+  type FoodCategory,
 } from '@/api/food';
 import { saveFoodLog } from '@/sync/store';
 import { goBack, refreshAfterSave } from '@/sync/hooks';
@@ -74,8 +80,13 @@ function FoodRow({
         <Text numberOfLines={1} style={{ fontSize: fontSizes.body, color: t.text }}>
           {food.name}
         </Text>
+        {food.name_ar ? (
+          <Text numberOfLines={1} style={{ fontSize: fontSizes.caption, color: t.muted }}>
+            {food.name_ar}
+          </Text>
+        ) : null}
         <Caption>
-          {Math.round(food.kcal)} kcal · {formatServing(food)}
+          {formatServing(food)} · {Math.round(food.kcal)} kcal · {formatMacros(food)}
           {food.brand ? ` · ${food.brand}` : ''}
         </Caption>
       </Pressable>
@@ -93,6 +104,47 @@ function FoodRow({
         />
       </Pressable>
     </View>
+  );
+}
+
+function CategoryChips({
+  categories,
+  selected,
+  onSelect,
+}: {
+  categories: FoodCategory[];
+  selected: string;
+  onSelect: (name: string) => void;
+}) {
+  const t = useTheme();
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ gap: spacing(1) }}
+      keyboardShouldPersistTaps="handled"
+    >
+      {categories.map((c) => {
+        const on = c.name === selected;
+        return (
+          <Pressable
+            key={c.name}
+            accessibilityRole="button"
+            accessibilityLabel={`Category ${c.name}, ${c.count} foods`}
+            accessibilityState={{ selected: on }}
+            onPress={() => onSelect(c.name)}
+            style={[
+              styles.chip,
+              { borderColor: on ? t.accent : t.border, backgroundColor: on ? t.accent : t.card },
+            ]}
+          >
+            <Text style={{ fontSize: fontSizes.body, fontWeight: '600', color: on ? '#0E1110' : t.text }}>
+              {c.name}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
   );
 }
 
@@ -131,6 +183,21 @@ export default function AddFood() {
     queryFn: () => searchFoods(query),
     enabled: searching,
     staleTime: 60_000,
+  });
+
+  const [chosenCategory, setChosenCategory] = useState<string | null>(null);
+  const categories = useQuery({
+    queryKey: foodKeys.categories,
+    queryFn: listCategories,
+    staleTime: 60 * 60_000,
+  });
+  const orderedCategories = useMemo(() => orderCategories(categories.data ?? []), [categories.data]);
+  const category = pickCategory(chosenCategory, orderedCategories);
+  const catalog = useQuery({
+    queryKey: foodKeys.catalog(category),
+    queryFn: () => listCatalog(category),
+    enabled: !searching,
+    staleTime: 60 * 60_000,
   });
 
   const favoriteIds = useMemo(
@@ -190,7 +257,7 @@ export default function AddFood() {
         <Title>Add food</Title>
         <TextInput
           accessibilityLabel="Search foods"
-          placeholder="Search foods"
+          placeholder="Search foods · ابحث عن أكلة"
           placeholderTextColor={t.muted}
           value={text}
           onChangeText={setText}
@@ -225,9 +292,6 @@ export default function AddFood() {
           <>
             {favs.length > 0 ? <Section title="Favorites">{renderFoods(favs)}</Section> : null}
             {recents.length > 0 ? <Section title="Recent">{renderFoods(recents)}</Section> : null}
-            {favs.length === 0 && recents.length === 0 ? (
-              <Body muted>Type at least 2 letters to search. Starred foods show up here.</Body>
-            ) : null}
             <RecentEntries
               table="food_logs"
               server={todayLogs.data as unknown as { id: string; updated_at: string }[] | undefined}
@@ -237,6 +301,24 @@ export default function AddFood() {
                 )} kcal`
               }
             />
+            <Section title="Browse">
+              {orderedCategories.length > 0 ? (
+                <CategoryChips
+                  categories={orderedCategories}
+                  selected={category}
+                  onSelect={setChosenCategory}
+                />
+              ) : null}
+              {catalog.isPending ? (
+                <ActivityIndicator color={t.accent} />
+              ) : catalog.isError ? (
+                <Caption warn>Could not load foods. Check your connection and try again.</Caption>
+              ) : catalog.data.length > 0 ? (
+                renderFoods(catalog.data)
+              ) : (
+                <Body muted>No foods in this category.</Body>
+              )}
+            </Section>
           </>
         )}
       </ScrollView>
@@ -302,6 +384,14 @@ const styles = StyleSheet.create({
   },
   rowMain: { flex: 1, padding: spacing(1.5), gap: spacing(0.5) },
   star: { padding: spacing(1.5) },
+  chip: {
+    borderWidth: 1,
+    borderRadius: radius,
+    paddingVertical: spacing(1),
+    paddingHorizontal: spacing(2),
+    minHeight: 40,
+    justifyContent: 'center',
+  },
   stepper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing(2) },
   stepBtn: {
     width: 48,
