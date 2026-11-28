@@ -4,6 +4,7 @@ export type Palette = {
   bg: string;
   card: string;
   border: string;
+  inset: string;
   text: string;
   muted: string;
   accent: string;
@@ -19,12 +20,13 @@ export const palettes: Record<'light' | 'dark', Palette> = {
     bg: '#0E1110',
     card: '#171B1A',
     border: '#242A28',
+    inset: '#0F1312',
     text: '#EEF1EF',
     muted: '#8C9794',
     accent: '#4FD1B5',
-    strength: '#F2A65A',
-    cardio: '#4FD1B5',
-    focus: '#8FA8FF',
+    strength: '#F2708A',
+    cardio: '#5FE0C0',
+    focus: '#A99BFF',
     good: '#5FD38D',
     warn: '#F2B24A',
   },
@@ -32,12 +34,13 @@ export const palettes: Record<'light' | 'dark', Palette> = {
     bg: '#F6F7F4',
     card: '#FFFFFF',
     border: '#E3E5E0',
+    inset: '#EEF0EB',
     text: '#1B1F1E',
     muted: '#6A7371',
     accent: '#1F8A70',
-    strength: '#D9822B',
+    strength: '#D6426A',
     cardio: '#1F8A70',
-    focus: '#4C63D9',
+    focus: '#6D5BD9',
     good: '#2E9E5E',
     warn: '#B87A12',
   },

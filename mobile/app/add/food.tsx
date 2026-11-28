@@ -29,7 +29,7 @@ import {
   type Food,
 } from '@/api/food';
 import { saveFoodLog } from '@/sync/store';
-import { LOCAL_KEY } from '@/sync/hooks';
+import { goBack, refreshAfterSave } from '@/sync/hooks';
 import { RecentEntries } from '@/sync/RecentEntries';
 import { Card } from '@/components/Card';
 import { Body, Button, Caption, Title } from '@/components/ui';
@@ -154,12 +154,9 @@ export default function AddFood() {
         ...previewTotals(selected, servings),
       });
     },
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: foodKeys.all });
-      await qc.invalidateQueries({ queryKey: ['dashboard'] });
-      await qc.invalidateQueries({ queryKey: LOCAL_KEY });
-      if (router.canGoBack()) router.back();
-      else router.replace('/');
+    onSuccess: () => {
+      refreshAfterSave(qc, foodKeys.all);
+      goBack(router);
     },
   });
 

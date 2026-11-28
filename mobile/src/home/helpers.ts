@@ -79,6 +79,42 @@ export function formatNumber(n: number | null | undefined): string {
   return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+/** Home status word: readiness score first (>=70 Healthy, 40-69 Okay, <40 Tired), else the status key. */
+export function statusWord(
+  key: StatusKey | string | null | undefined,
+  score?: number | null,
+): 'Healthy' | 'Okay' | 'Tired' | 'No data yet' {
+  if (isNum(score)) return score >= 70 ? 'Healthy' : score >= 40 ? 'Okay' : 'Tired';
+  if (key === 'well_rested') return 'Healthy';
+  if (key === 'okay') return 'Okay';
+  if (key === 'tired') return 'Tired';
+  return 'No data yet';
+}
+
+export function statusWordColor(word: string, p: Palette): string {
+  if (word === 'Healthy') return p.good;
+  if (word === 'Okay' || word === 'Tired') return p.warn;
+  return p.muted;
+}
+
+/** "Alex Smith" -> "AS", "alex" -> "A", null -> "?". */
+export function initials(name: string | null | undefined): string {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  const first = parts[0][0];
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return (first + last).toUpperCase();
+}
+
+/** Prefer a still-unsynced local weight (or one when the server has none) over the dashboard's. */
+export function pickWeight(
+  server: number | null | undefined,
+  local: { kg: number; pending: boolean } | null | undefined,
+): number | null {
+  if (local && (local.pending || !isNum(server))) return local.kg;
+  return isNum(server) ? server : null;
+}
+
 /** 78.4 -> "78.4 kg". */
 export function formatKg(kg: number): string {
   return `${Math.round(kg * 10) / 10} kg`;

@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 
 import { AuthProvider, useAuth } from '@/auth/AuthProvider';
+import { useTheme } from '@/theme';
 import { onSynced, startEngine, stopEngine } from '@/sync/engine';
 
 /** Runs the offline-sync engine while signed in and refreshes screens after each sync. */
@@ -33,6 +34,7 @@ function Gate() {
   const { status } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const t = useTheme();
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -43,9 +45,30 @@ function Gate() {
 
   if (status === 'loading') return null;
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
+    <Stack
+      screenOptions={{
+        headerShown: true,
+        headerStyle: { backgroundColor: t.bg },
+        headerShadowVisible: false,
+        headerTintColor: t.text,
+        headerTitleStyle: { color: t.text, fontWeight: '600' },
+        headerBackButtonDisplayMode: 'minimal',
+        contentStyle: { backgroundColor: t.bg },
+      }}
+    >
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="add/workout" options={{ title: 'Log workout' }} />
+      <Stack.Screen name="add/food" options={{ title: 'Add food' }} />
+      <Stack.Screen name="add/sleep" options={{ title: 'Log sleep' }} />
+      <Stack.Screen name="add/weight" options={{ title: 'Log weight' }} />
+      <Stack.Screen name="summary" options={{ title: 'Your week' }} />
+      <Stack.Screen name="leaderboard" options={{ title: 'Leaderboard' }} />
+      <Stack.Screen name="chat/index" options={{ title: 'Chat' }} />
+      <Stack.Screen name="chat/[id]" options={{ title: 'Chat' }} />
+      <Stack.Screen name="friend/[id]" options={{ title: 'Friend' }} />
+      <Stack.Screen name="invite/[code]" options={{ title: 'Invitation' }} />
+      <Stack.Screen name="health-permissions" options={{ title: 'Health data' }} />
     </Stack>
   );
 }

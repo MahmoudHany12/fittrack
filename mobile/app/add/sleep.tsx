@@ -16,7 +16,7 @@ import {
   shiftMinutes,
 } from '@/api/sleep';
 import { saveSleep } from '@/sync/store';
-import { LOCAL_KEY } from '@/sync/hooks';
+import { goBack, refreshAfterSave } from '@/sync/hooks';
 import { RecentEntries } from '@/sync/RecentEntries';
 import { Body, Button, Caption, Screen, Title } from '@/components/ui';
 import { Card } from '@/components/Card';
@@ -117,11 +117,9 @@ export default function AddSleep() {
         wake_time: wake.toISOString(),
         quality,
       }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['sleep'] });
-      await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      await queryClient.invalidateQueries({ queryKey: LOCAL_KEY });
-      router.back();
+    onSuccess: () => {
+      refreshAfterSave(queryClient, ['sleep']);
+      goBack(router);
     },
   });
 

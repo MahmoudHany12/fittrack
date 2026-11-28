@@ -130,3 +130,17 @@ export async function recentEntries(table: TableName, server: ServerRow[], limit
   ]);
   return mergeEntries(table, server, local, pend).slice(0, limit);
 }
+
+export type LatestWeight = { kg: number; pending: boolean; at: number };
+
+/** Newest non-deleted local weight (this device), flagged when still waiting to sync. */
+export async function latestLocalWeight(): Promise<LatestWeight | null> {
+  const [rows, pend] = await Promise.all([listLocal('weight'), pendingIds('weight')]);
+  for (const r of rows) {
+    const kg = r.data.kg;
+    if (typeof kg === 'number' && Number.isFinite(kg)) {
+      return { kg, pending: pend.has(r.id), at: entryTime('weight', r.data, r.updated_at) };
+    }
+  }
+  return null;
+}
