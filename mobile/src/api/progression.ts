@@ -4,18 +4,17 @@ export type WindowState = 'open' | 'recovering' | 'needs_rest' | 'missed';
 
 export type LevelInfo = { level: number; points?: number; progress: number; value: number };
 
-/** Focus only has a level. */
-export type FocusTrack = { level: LevelInfo };
+/** Focus only has level info (fields flattened into the track). */
+export type FocusTrack = LevelInfo;
 
-/** Strength and cardio carry a workout window; level info is nested under `level`. */
-export type WindowTrack = {
+/** Strength and cardio carry a workout window; level info fields are flattened into the track. */
+export type WindowTrack = LevelInfo & {
   state: WindowState;
   opens_at: string | null;
   closes_at: string | null;
   /** open: remaining share of the window (1 -> 0). recovering: progress to opening (0 -> 1). */
   fraction: number;
   protein_bonus?: boolean;
-  level: LevelInfo;
 };
 
 export type PersonalBest = {

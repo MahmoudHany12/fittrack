@@ -62,7 +62,7 @@ after two sessions in a row with missed reps, −10 %.
 last sessions (or "pick a starting weight" when none).
 
 ## API summary
-- `GET /progression` → `{ tracks: { strength: {...window, level, points, progress, value},
+- `GET /progression` → `{ tracks: { strength: {...window, level, points, progress, value} (level fields flattened into each track),
   cardio: {...}, focus: {level, points, progress, value} }, ring: {minutes, goal: 30, closed},
   hints: [string], new_personal_bests: [...] }`
 - Dashboard `stats` comes from this model; dashboard gains `progression` (same object) and

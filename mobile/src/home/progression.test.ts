@@ -6,7 +6,7 @@ const NOW = Date.parse('2026-06-15T10:00:00.000Z');
 const h = (n: number) => new Date(NOW + n * 3600_000).toISOString();
 
 const track = (p: Partial<WindowTrack>): WindowTrack => ({
-  level: { level: 2, progress: 0.5, value: 40 },
+  level: 2, progress: 0.5, value: 40,
   state: 'open',
   opens_at: null,
   closes_at: null,

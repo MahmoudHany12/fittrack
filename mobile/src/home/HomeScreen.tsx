@@ -449,7 +449,7 @@ export function HomeScreen() {
         icon={Heart}
         color={t.strength}
         stat={stats?.strength}
-        track={trackView(prog?.tracks?.strength?.level)}
+        track={trackView(prog?.tracks?.strength)}
         onPress={() => go('/add/workout')}
         onLongPress={() => go('/program')}
         outlined
@@ -470,7 +470,7 @@ export function HomeScreen() {
         icon={Zap}
         color={t.cardio}
         stat={stats?.cardio}
-        track={trackView(prog?.tracks?.cardio?.level)}
+        track={trackView(prog?.tracks?.cardio)}
         onPress={() => go('/add/workout')}
       >
         {prog?.tracks?.cardio ? (
@@ -493,7 +493,7 @@ export function HomeScreen() {
         icon={Eye}
         color={t.focus}
         stat={stats?.focus}
-        track={trackView(prog?.tracks?.focus?.level)}
+        track={trackView(prog?.tracks?.focus)}
         onPress={() => go('/add/sleep')}
       >
         {prog?.tracks?.focus ? <Caption>{FOCUS_TEXT}</Caption> : null}
