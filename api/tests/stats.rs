@@ -146,7 +146,7 @@ async fn stats_reflect_activity_and_are_isolated(pool: PgPool) {
     }
     seed_workout(&pool, ann_id, 1, "Running", 1).await;
     // Bob only ran once, a long time ago relative to Ann.
-    seed_workout(&pool, bob_id, 3, "Running", 1).await;
+    seed_workout(&pool, bob_id, 1, "Running", 1).await;
 
     let (s, a) = call(&app, Method::GET, "/stats", None, Some(&ann)).await;
     assert_eq!(s, StatusCode::OK, "{a}");
@@ -160,13 +160,14 @@ async fn stats_reflect_activity_and_are_isolated(pool: PgPool) {
         let p = st["progress"].as_f64().unwrap();
         assert!((0.0..=1.0).contains(&p));
     }
-    // Ann lifts a lot, Bob never lifted.
-    assert!(a["strength"]["value"].as_u64().unwrap() > 40);
-    assert_eq!(b["strength"]["value"], 10);
+    // Ann lifted six days in a row (six points = level 2), Bob never lifted.
+    assert_eq!(a["strength"]["level"], 2, "{a}");
+    assert!(a["strength"]["value"].as_u64().unwrap() >= 25);
+    assert_eq!(b["strength"]["value"], 0);
     assert_eq!(b["strength"]["level"], 1);
     assert!(a["strength"]["value"].as_u64() > b["strength"]["value"].as_u64());
     // Bob's cardio comes from his own run.
-    assert!(b["cardio"]["value"].as_u64().unwrap() > 10);
+    assert!(b["cardio"]["value"].as_u64().unwrap() > 0);
 
     // Snapshots are stored per user, one row per day, upserted on re-read.
     let (_, again) = call(&app, Method::GET, "/stats", None, Some(&ann)).await;
@@ -185,27 +186,23 @@ async fn stats_reflect_activity_and_are_isolated(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn poor_sleep_and_deleted_workouts(pool: PgPool) {
+async fn deleted_workouts_do_not_count(pool: PgPool) {
     let app = router(pool.clone());
     let (tok, uid) = register(&app, "ann@example.com").await;
     seed_workout(&pool, uid, 0, "Squat", 10).await;
-    let (_, rested) = call(&app, Method::GET, "/stats", None, Some(&tok)).await;
-    for d in 0..7 {
-        seed_sleep(&pool, uid, d, 4).await;
-    }
-    let (_, tired) = call(&app, Method::GET, "/stats", None, Some(&tok)).await;
+    let (_, before) = call(&app, Method::GET, "/stats", None, Some(&tok)).await;
+    assert_eq!(before["strength"]["level"], 1);
     assert!(
-        tired["strength"]["value"].as_u64().unwrap()
-            < rested["strength"]["value"].as_u64().unwrap()
+        before["strength"]["progress"].as_f64().unwrap() > 0.0,
+        "{before}"
     );
 
-    // Soft-deleted workouts do not count.
+    // Soft-deleted workouts do not count: no history means no stats.
     sqlx::query("UPDATE workouts SET deleted_at = now() WHERE user_id = $1")
         .bind(uid)
         .execute(&pool)
         .await
         .unwrap();
     let (_, after) = call(&app, Method::GET, "/stats", None, Some(&tok)).await;
-    // Back to baseline (the poor-sleep penalty still applies on top of it).
-    assert!(after["strength"]["value"].as_u64().unwrap() <= 10);
+    assert!(after.is_null(), "{after}");
 }

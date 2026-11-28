@@ -95,6 +95,8 @@ pub struct Dashboard {
     /// `null` only when the `stats` feature flag is off; with the flag on it is
     /// always an object (zeroed for users without activity).
     pub stats: Option<serde_json::Value>,
+    /// Full progression model (see docs/progression.md); `null` when the `stats` flag is off.
+    pub progression: Option<serde_json::Value>,
 }
 
 /// Plain-language diet status. `hour` is the current UTC hour: "Under-eating" is
@@ -121,8 +123,11 @@ async fn dashboard(
     let now = Utc::now();
     let mut d = build(&state.pool, user.0, now).await?;
     if state.config.feature("stats") {
-        let s = crate::stats::current_stats_or_zero(&state.pool, user.0, now).await?;
-        d.stats = Some(serde_json::to_value(s).unwrap_or_default());
+        let p = crate::progression::for_user(&state.pool, user.0, now).await?;
+        d.stats = Some(serde_json::to_value(crate::stats::Stats::from(&p)).unwrap_or_default());
+        // The workout window follows the cardio track's window when stats are on.
+        d.workout_window.fraction = p.tracks.cardio.fraction;
+        d.progression = Some(serde_json::to_value(&p).unwrap_or_default());
     }
     Ok(Json(d))
 }
@@ -251,6 +256,7 @@ pub async fn build(
         },
         workout_window: workout_window(secs_today / 60, steps),
         stats: None, // filled by the handler when the `stats` flag is on
+        progression: None,
     })
 }
 
