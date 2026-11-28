@@ -13,7 +13,8 @@
 | wger | Reference + exercise data/API only | AGPL-3.0 | No code copied |
 | SparkyFitness | Data model reference | (check before reuse) | Study only until license verified |
 | Open Food Facts | Food search data | ODbL (data) | Attribution required |
-| USDA FoodData Central | Food search data | CC0 / public domain | API key required |
+| USDA FoodData Central | Food search data; values for single ingredients in the built-in catalog | CC0 / public domain | API key required for search; catalog values copied into migration `0016` |
+| Built-in Egyptian / composite dishes | Built-in food catalog | MIT (this repo) | Values computed by the project from standard home recipes (ingredients summed per typical serving); a unit test checks kcal ≈ 4·P + 4·C + 9·F within 10% |
 
 ## Auth (feature/auth)
 | Date | Decision | Why |

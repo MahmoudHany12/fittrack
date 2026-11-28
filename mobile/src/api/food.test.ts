@@ -2,10 +2,16 @@ import {
   addFavorite,
   clampServings,
   createFoodLog,
+  DEFAULT_CATEGORY,
   deleteFoodLog,
+  formatMacros,
   getFoodSummary,
   isSearchable,
+  listCatalog,
+  listCategories,
   newId,
+  orderCategories,
+  pickCategory,
   previewTotals,
   removeFavorite,
   searchFoods,
@@ -89,5 +95,49 @@ describe('helpers', () => {
 
   it('formats today as a UTC date', () => {
     expect(todayUtc(new Date('2026-11-27T23:59:00Z'))).toBe('2026-11-27');
+  });
+
+  it('accepts Arabic search queries', () => {
+    expect(isSearchable('كشري')).toBe(true);
+    expect(isSearchable(' ك ')).toBe(false);
+  });
+
+  it('formats macros with at most one decimal', () => {
+    expect(formatMacros({ protein_g: 17, carbs_g: 98.04, fat_g: 10.86 })).toBe('P 17 · C 98 · F 10.9');
+  });
+});
+
+describe('catalog', () => {
+  const cats = [
+    { name: 'Drinks', count: 19 },
+    { name: 'Egyptian', count: 113 },
+    { name: 'Fruits', count: 25 },
+  ];
+
+  it('requests the catalog with an encoded category, or all of it', async () => {
+    await listCatalog('Nuts & seeds');
+    await listCatalog();
+    await listCatalog('  ');
+    await listCategories();
+    expect(mockAuthedRequest.mock.calls).toEqual([
+      ['/foods/catalog?category=Nuts%20%26%20seeds'],
+      ['/foods/catalog'],
+      ['/foods/catalog'],
+      ['/foods/categories'],
+    ]);
+  });
+
+  it('puts Egyptian first and keeps the rest in order', () => {
+    expect(orderCategories(cats).map((c) => c.name)).toEqual(['Egyptian', 'Drinks', 'Fruits']);
+    expect(orderCategories([{ name: 'A', count: 1 }]).map((c) => c.name)).toEqual(['A']);
+    expect(DEFAULT_CATEGORY).toBe('Egyptian');
+  });
+
+  it('keeps a valid selection and falls back otherwise', () => {
+    const ordered = orderCategories(cats);
+    expect(pickCategory('Fruits', ordered)).toBe('Fruits');
+    expect(pickCategory('Gone', ordered)).toBe('Egyptian');
+    expect(pickCategory(null, ordered)).toBe('Egyptian');
+    expect(pickCategory(null, [])).toBe('Egyptian');
   });
 });
