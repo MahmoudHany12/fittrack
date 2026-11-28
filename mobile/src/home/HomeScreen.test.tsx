@@ -246,4 +246,73 @@ describe('HomeScreen', () => {
     expect(text(r)).toContain('1,720 / 2,200 kcal');
     expect(text(r)).toContain('30 / 30 min');
   });
+
+  describe('progression', () => {
+    const iso = (h: number) => new Date(Date.now() + h * 3600_000 + 60_000).toISOString();
+    const prog = {
+      tracks: {
+        strength: {
+          state: 'recovering' as const,
+          opens_at: iso(6),
+          closes_at: iso(54),
+          fraction: 0.7,
+          protein_bonus: true,
+          level: 3,
+          points: 12,
+          progress: 0.5,
+          value: 62,
+        },
+        cardio: {
+          state: 'missed' as const,
+          opens_at: null,
+          closes_at: null,
+          fraction: 0,
+          level: 1,
+          points: 0,
+          progress: 0,
+          value: 5,
+        },
+        focus: { level: 2, points: 5, progress: 0.2, value: 30 },
+      },
+      ring: { minutes: 12, goal: 30, closed: false },
+      hints: ['Eat something before training for more energy.', 'Two', 'Three'],
+      new_personal_bests: [{ exercise: 'Squat', weight_kg: 100 }],
+    };
+
+    it('shows window state, focus text, ring, at most two hints and the PB chip', async () => {
+      mockGet.mockResolvedValue({ ...full, progression: prog });
+      const r = await render();
+      const t = text(r);
+      expect(t).toContain('Recovering · opens in 6 h');
+      expect(t).toContain('Protein bonus');
+      expect(t).toContain('Window missed — train to get back on track');
+      expect(t).toContain('Level 3/4');
+      expect(t).toContain('Level 2/4');
+      expect(t).toContain('Grows with meditation, yoga, sports');
+      expect(t).toContain('12/30 min');
+      expect(t).toContain('Eat something before training for more energy.');
+      expect(t).toContain('Two');
+      expect(t).not.toContain('Three');
+      expect(t).toContain('New personal best');
+      await act(async () => byLabel(r, 'New personal best').props.onPress());
+      expect(mockPush).toHaveBeenCalledWith('/records');
+    });
+
+    it('shows Done for today when the ring is closed and no chip without bests', async () => {
+      mockGet.mockResolvedValue({
+        ...full,
+        progression: { ...prog, ring: { minutes: 40, goal: 30, closed: true }, new_personal_bests: [] },
+      });
+      const t = text(await render());
+      expect(t).toContain('Done for today');
+      expect(t).not.toContain('New personal best');
+    });
+
+    it('links to the program from the Strength card', async () => {
+      mockGet.mockResolvedValue({ ...full, progression: prog });
+      const r = await render();
+      await act(async () => byLabel(r, 'Program').props.onPress());
+      expect(mockPush).toHaveBeenCalledWith('/program');
+    });
+  });
 });

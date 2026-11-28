@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Eye, Heart, Hourglass, Zap, type LucideIcon } from 'lucide-react-native';
+import { Award, Eye, Heart, Hourglass, Zap, type LucideIcon } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useState, type ReactNode } from 'react';
 import {
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 
 import { getDashboard, type Dashboard, type StatEntry } from '@/api/dashboard';
+import type { Progression, WindowTrack } from '@/api/progression';
 import { Ring } from '@/components/Ring';
 import { Body, Button, Caption, Title } from '@/components/ui';
 import { useLatestLocalWeight, useOnline, usePendingCount, usePendingTotals } from '@/sync/hooks';
@@ -34,8 +35,15 @@ import {
   trendArrow,
   trendWord,
 } from './helpers';
+import { FOCUS_TEXT, pickHints, ringText, trackView, windowView } from './progression';
 
-type Route = '/add/workout' | '/add/food' | '/add/sleep' | '/add/weight';
+type Route =
+  | '/add/workout'
+  | '/add/food'
+  | '/add/sleep'
+  | '/add/weight'
+  | '/records'
+  | '/program';
 
 function SectionHeading({ children }: { children: string }) {
   const t = useTheme();
@@ -53,16 +61,24 @@ function SectionHeading({ children }: { children: string }) {
 function Tap({
   label,
   onPress,
+  onLongPress,
   children,
   style,
 }: {
   label: string;
   onPress: () => void;
+  onLongPress?: () => void;
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={style}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={style}
+    >
       {children}
     </Pressable>
   );
@@ -85,7 +101,9 @@ function StatCard({
   color,
   stat,
   onPress,
+  onLongPress,
   outlined,
+  track,
   children,
 }: {
   title: string;
@@ -93,11 +111,14 @@ function StatCard({
   color: string;
   stat: StatEntry | null | undefined;
   onPress: () => void;
+  onLongPress?: () => void;
   outlined?: boolean;
+  /** Level from the progression model; wins over `stat` when present. */
+  track?: { level: number; progress: number } | null;
   children?: ReactNode;
 }) {
   const t = useTheme();
-  const { level, progress } = statView(stat);
+  const { level, progress } = track ?? statView(stat);
   return (
     <View
       style={[styles.statCard, { backgroundColor: t.card, borderColor: outlined ? t.muted : t.card }]}
@@ -105,6 +126,7 @@ function StatCard({
       <Tap
         label={`${title}, level ${level} of 4. Tap to log.`}
         onPress={onPress}
+        onLongPress={onLongPress}
         style={styles.statTap}
       >
         <View>
@@ -145,6 +167,51 @@ function WorkoutWindow({
       </View>
       <Bar fraction={fraction} color={t.cardio} />
     </Tap>
+  );
+}
+
+/** Window state for a strength/cardio track: draining or filling bar plus one plain line. */
+function ProgressionWindow({
+  track,
+  color,
+  onPress,
+}: {
+  track: WindowTrack;
+  color: string;
+  onPress: () => void;
+}) {
+  const t = useTheme();
+  const v = windowView(track);
+  return (
+    <Tap
+      label={`Workout window. ${v.text}. Tap to log.`}
+      onPress={onPress}
+      style={[styles.inset, { backgroundColor: t.inset }]}
+    >
+      <View style={styles.windowHead}>
+        <Hourglass size={18} color={color} />
+        <Text style={{ fontSize: fontSizes.body, fontWeight: '600', color: t.text }}>
+          Workout window
+        </Text>
+        {v.proteinBonus ? (
+          <View style={[styles.chip, { borderColor: t.good }]}>
+            <Text style={{ fontSize: fontSizes.caption, color: t.good }}>Protein bonus</Text>
+          </View>
+        ) : null}
+      </View>
+      <Bar fraction={v.fraction} color={v.warn ? t.warn : color} />
+      {v.text ? <Caption warn={v.warn}>{v.text}</Caption> : null}
+    </Tap>
+  );
+}
+
+function DailyRing({ ring, color }: { ring: Progression['ring']; color: string }) {
+  const r = ringText(ring);
+  return (
+    <View style={styles.dailyRing} accessibilityLabel={`Daily ring: ${r.label}`}>
+      <Ring progress={r.fraction} icon={Zap} color={color} size={36} strokeWidth={4} />
+      <Caption>{r.label}</Caption>
+    </View>
   );
 }
 
@@ -342,6 +409,9 @@ export function HomeScreen() {
   const stats = data.stats;
   const word = statusWord(data.status.key, data.readiness?.score);
   const win = shown.workout_window ?? windowWith(shown.exercise?.workout_minutes_today ?? 0, 30);
+  const prog = data.progression ?? null;
+  const hints = pickHints(prog?.hints);
+  const newBests = prog?.new_personal_bests ?? [];
   const weightKg = pickWeight(data.body?.weight_kg ?? data.weight?.kg, localWeight);
   return (
     <ScrollView
@@ -365,6 +435,7 @@ export function HomeScreen() {
             <Caption>{`${pending} ${pending === 1 ? 'entry' : 'entries'} waiting to sync`}</Caption>
           ) : null}
         </View>
+        {prog?.ring ? <DailyRing ring={prog.ring} color={t.cardio} /> : null}
         <View style={[styles.avatar, { backgroundColor: t.card, borderColor: t.border }]}>
           <Text style={{ fontSize: fontSizes.cardTitle, fontWeight: '700', color: t.text }}>
             {initials(data.name)}
@@ -378,30 +449,68 @@ export function HomeScreen() {
         icon={Heart}
         color={t.strength}
         stat={stats?.strength}
+        track={trackView(prog?.tracks?.strength)}
         onPress={() => go('/add/workout')}
+        onLongPress={() => go('/program')}
         outlined
-      />
+      >
+        {prog?.tracks?.strength ? (
+          <ProgressionWindow
+            track={prog.tracks.strength}
+            color={t.strength}
+            onPress={() => go('/add/workout')}
+          />
+        ) : null}
+        <Tap label="Program. Today's suggested session." onPress={() => go('/program')}>
+          <Caption>{"Program: today's session"}</Caption>
+        </Tap>
+      </StatCard>
       <StatCard
         title="Cardio Workout"
         icon={Zap}
         color={t.cardio}
         stat={stats?.cardio}
+        track={trackView(prog?.tracks?.cardio)}
         onPress={() => go('/add/workout')}
       >
-        <WorkoutWindow
-          fraction={win.fraction}
-          minutes={Math.round(win.minutes_today)}
-          goal={win.goal_minutes}
-          onPress={() => go('/add/workout')}
-        />
+        {prog?.tracks?.cardio ? (
+          <ProgressionWindow
+            track={prog.tracks.cardio}
+            color={t.cardio}
+            onPress={() => go('/add/workout')}
+          />
+        ) : (
+          <WorkoutWindow
+            fraction={win.fraction}
+            minutes={Math.round(win.minutes_today)}
+            goal={win.goal_minutes}
+            onPress={() => go('/add/workout')}
+          />
+        )}
       </StatCard>
       <StatCard
         title="Focus"
         icon={Eye}
         color={t.focus}
         stat={stats?.focus}
+        track={trackView(prog?.tracks?.focus)}
         onPress={() => go('/add/sleep')}
-      />
+      >
+        {prog?.tracks?.focus ? <Caption>{FOCUS_TEXT}</Caption> : null}
+      </StatCard>
+      {newBests.length > 0 ? (
+        <Tap
+          label="New personal best. Tap to see your records."
+          onPress={() => go('/records')}
+          style={[styles.chip, styles.bestChip, { borderColor: t.accent }]}
+        >
+          <Award size={16} color={t.accent} />
+          <Text style={{ fontSize: fontSizes.body, color: t.accent }}>New personal best</Text>
+        </Tap>
+      ) : null}
+      {hints.map((h) => (
+        <Caption key={h}>{h}</Caption>
+      ))}
 
       <SectionHeading>Body & Nutrition</SectionHeading>
       <BodyRows data={shown} go={go} weightKg={weightKg} />
@@ -440,5 +549,20 @@ const styles = StyleSheet.create({
   rowName: { fontSize: fontSizes.body, fontWeight: '600', width: 64 },
   rowValue: { flex: 1, alignItems: 'flex-end', gap: spacing(0.5) },
   weightValue: { flexDirection: 'row', alignItems: 'center', gap: spacing(1) },
+  chip: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: spacing(1),
+    paddingVertical: 2,
+  },
+  bestChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(1),
+    paddingVertical: spacing(1),
+    paddingHorizontal: spacing(1.5),
+  },
+  dailyRing: { alignItems: 'center', gap: 2 },
   barTrack: { height: 6, width: '100%', borderRadius: 3, overflow: 'hidden' },
 });

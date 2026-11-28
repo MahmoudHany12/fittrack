@@ -62,6 +62,8 @@ function Gate() {
       <Stack.Screen name="add/food" options={{ title: 'Add food' }} />
       <Stack.Screen name="add/sleep" options={{ title: 'Log sleep' }} />
       <Stack.Screen name="add/weight" options={{ title: 'Log weight' }} />
+      <Stack.Screen name="program" options={{ title: 'Program' }} />
+      <Stack.Screen name="records" options={{ title: 'Personal bests' }} />
       <Stack.Screen name="summary" options={{ title: 'Your week' }} />
       <Stack.Screen name="leaderboard" options={{ title: 'Leaderboard' }} />
       <Stack.Screen name="chat/index" options={{ title: 'Chat' }} />
