@@ -1,4 +1,4 @@
-import type { Progression, TrackLevel, WindowTrack } from '@/api/progression';
+import type { Progression, LevelInfo, WindowTrack } from '@/api/progression';
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 const isNum = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
@@ -61,7 +61,7 @@ export function windowView(track: WindowTrack, now: number = Date.now()): Window
 
 /** Level 1..4 and ring progress from a progression track. */
 export function trackView(
-  track: TrackLevel | null | undefined,
+  track: LevelInfo | null | undefined,
 ): { level: number; progress: number } | null {
   if (!track || !isNum(track.level)) return null;
   return {

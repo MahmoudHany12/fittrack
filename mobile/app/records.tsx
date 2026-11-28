@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { View } from 'react-native';
 
-import { dateText, getRecords, kgText, recordsKeys } from '@/api/records';
+import { dateText, getRecords, kgText, liftText, recordsKeys } from '@/api/records';
 import { Card } from '@/components/Card';
 import { ScrollScreen } from '@/components/forms';
 import { Body, Caption, Title } from '@/components/ui';
@@ -21,12 +21,10 @@ export default function Records() {
       {list.map((r) => (
         <Card key={r.exercise_id}>
           <View style={{ gap: 4 }}>
-            <Body>{r.exercise}</Body>
-            <Caption>{`Heaviest ${kgText(r.heaviest_kg)}${
-              r.heaviest_reps ? ` × ${r.heaviest_reps}` : ''
-            }`}</Caption>
-            <Caption>{`Estimated 1RM ${kgText(r.best_1rm_kg)}`}</Caption>
-            {dateText(r.achieved_at) ? <Caption>{dateText(r.achieved_at)}</Caption> : null}
+            <Body>{r.exercise_name}</Body>
+            <Caption>{`Heaviest ${liftText(r.best_weight_kg, r.best_weight_reps)}`}</Caption>
+            <Caption>{`Estimated 1RM ${kgText(r.best_e1rm_kg)}`}</Caption>
+            {dateText(r.best_weight_at) ? <Caption>{dateText(r.best_weight_at)}</Caption> : null}
           </View>
         </Card>
       ))}

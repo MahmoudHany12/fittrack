@@ -1,39 +1,44 @@
 import { authedRequest } from './client';
 
 export type ProgramExercise = {
-  exercise_id: string;
+  /** null when the exercise is not in the catalog. */
+  exercise_id: string | null;
   name: string;
   sets: number;
   reps: number;
   /** null when there is no history yet: "pick a starting weight". */
-  target_weight_kg: number | null;
-  rest_s?: number | null;
-  superset_with?: string | null;
+  weight_kg: number | null;
+  reason: 'start' | 'increase' | 'repeat' | 'deload';
+  note: string;
+  /** "A" marks a superset pair; null otherwise. */
+  superset: string | null;
 };
 
 export type ProgramSession = {
-  program?: string;
-  week?: number;
-  day?: number;
-  title?: string;
+  name: string;
+  title: string;
+  week: number;
+  day: number;
+  sets: number;
+  completed: boolean;
+  is_a: boolean;
+  weeks: number;
+  days_per_week: number;
+  sessions_done: number;
+  rest: { min_s: number; max_s: number };
   exercises: ProgramExercise[];
 };
 
 export const programKeys = { today: ['program'] as const };
 
-/** Accepts the session directly or wrapped as { session }. Rest day / empty -> null. */
-export function getProgram(): Promise<ProgramSession | null> {
-  return authedRequest<(ProgramSession & { session?: ProgramSession | null }) | null>('/program').then(
-    (r) => {
-      const s = r && 'session' in r && r.session !== undefined ? r.session : r;
-      return s && Array.isArray(s.exercises) && s.exercises.length > 0 ? s : null;
-    },
-  );
+export function getProgram(): Promise<ProgramSession> {
+  return authedRequest<ProgramSession>('/program');
 }
 
-export function restText(s: number | null | undefined): string {
-  if (typeof s !== 'number' || !(s > 0)) return '';
-  return s >= 60 && s % 60 === 0 ? `Rest ${s / 60} min` : `Rest ${Math.round(s)} s`;
+export function restText(rest: { min_s: number; max_s: number } | null | undefined): string {
+  if (!rest || !(rest.max_s > 0)) return '';
+  const f = (s: number) => (s >= 60 && s % 60 === 0 ? `${s / 60} min` : `${s} s`);
+  return rest.min_s === rest.max_s ? `Rest ${f(rest.max_s)}` : `Rest ${f(rest.min_s)} to ${f(rest.max_s)}`;
 }
 
 export function targetText(kg: number | null | undefined): string {
@@ -42,15 +47,30 @@ export function targetText(kg: number | null | undefined): string {
     : 'Pick a starting weight';
 }
 
-export type ProgramPrefill = { id: string; sets: number; reps: number; kg: number };
+export type ProgramGroup = { superset: string | null; items: ProgramExercise[] };
 
-/** Params for /add/workout: `program` is a JSON list of { id, sets, reps, kg }. */
+/** Consecutive exercises sharing a superset letter are shown together. */
+export function groupExercises(list: ProgramExercise[]): ProgramGroup[] {
+  const groups: ProgramGroup[] = [];
+  for (const e of list) {
+    const last = groups[groups.length - 1];
+    if (e.superset && last && last.superset === e.superset) last.items.push(e);
+    else groups.push({ superset: e.superset, items: [e] });
+  }
+  return groups;
+}
+
+/** `id` is null when only the name is known; the workout form then looks it up by name. */
+export type ProgramPrefill = { id: string | null; name: string; sets: number; reps: number; kg: number };
+
+/** Params for /add/workout: `program` is a JSON list of prefill entries. */
 export function startParams(s: ProgramSession): { program: string } {
   const list: ProgramPrefill[] = s.exercises.map((e) => ({
     id: e.exercise_id,
+    name: e.name,
     sets: e.sets,
     reps: e.reps,
-    kg: e.target_weight_kg ?? 0,
+    kg: e.weight_kg ?? 0,
   }));
   return { program: JSON.stringify(list) };
 }
@@ -64,7 +84,8 @@ export function parsePrefill(raw: string | string[] | undefined): ProgramPrefill
     return v.filter(
       (p): p is ProgramPrefill =>
         !!p &&
-        typeof p.id === 'string' &&
+        (p.id === null || typeof p.id === 'string') &&
+        typeof p.name === 'string' &&
         Number.isFinite(p.sets) &&
         Number.isFinite(p.reps) &&
         Number.isFinite(p.kg),

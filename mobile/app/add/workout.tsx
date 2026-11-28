@@ -169,11 +169,12 @@ export default function AddWorkout() {
   const prefill = useMemo<Entry[]>(() => {
     if (!params.program || !results.data) return [];
     const byId = new Map(results.data.map((e) => [e.id, e]));
+    const byName = new Map(results.data.map((e) => [e.name.toLowerCase(), e]));
     const next: Entry[] = [];
     for (const p of parsePrefill(params.program)) {
-      const exercise = byId.get(p.id);
-      if (!exercise) continue;
-      const kg = p.kg > 0 ? p.kg : (lastSet.get(p.id)?.weight ?? DEFAULT_SET.weight);
+      const exercise = (p.id ? byId.get(p.id) : undefined) ?? byName.get(p.name.toLowerCase());
+      if (!exercise || next.some((n) => n.exercise.id === exercise.id)) continue;
+      const kg = p.kg > 0 ? p.kg : (lastSet.get(exercise.id)?.weight ?? DEFAULT_SET.weight);
       next.push({
         exercise,
         sets: Array.from({ length: Math.max(1, Math.min(LIMITS.maxSets, p.sets)) }, () => ({

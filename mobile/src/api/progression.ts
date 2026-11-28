@@ -2,30 +2,37 @@ import { authedRequest } from './client';
 
 export type WindowState = 'open' | 'recovering' | 'needs_rest' | 'missed';
 
-export type TrackLevel = { level: number; points?: number; progress: number; value: number };
+export type LevelInfo = { level: number; points?: number; progress: number; value: number };
 
-/** Strength and cardio carry a workout window on top of the level. */
-export type WindowTrack = TrackLevel & {
+/** Focus only has a level. */
+export type FocusTrack = { level: LevelInfo };
+
+/** Strength and cardio carry a workout window; level info is nested under `level`. */
+export type WindowTrack = {
   state: WindowState;
   opens_at: string | null;
   closes_at: string | null;
   /** open: remaining share of the window (1 -> 0). recovering: progress to opening (0 -> 1). */
   fraction: number;
   protein_bonus?: boolean;
+  level: LevelInfo;
 };
 
 export type PersonalBest = {
-  exercise_id?: string;
-  exercise?: string;
-  kind?: 'weight' | 'one_rep_max' | string;
-  weight_kg?: number;
-  reps?: number;
-  one_rep_max_kg?: number;
+  exercise_id: string;
+  exercise_name: string;
+  kind: 'weight' | 'e1rm';
+  value: number;
+  previous: number | null;
+  weight_kg: number;
+  reps: number;
+  workout_id?: string;
+  achieved_at?: string;
 };
 
 /** Contract: docs/progression.md "API summary". */
 export type Progression = {
-  tracks: { strength: WindowTrack; cardio: WindowTrack; focus: TrackLevel };
+  tracks: { strength: WindowTrack; cardio: WindowTrack; focus: FocusTrack };
   ring: { minutes: number; goal: number; closed: boolean };
   hints: string[];
   new_personal_bests: PersonalBest[];
@@ -41,10 +48,9 @@ export const PROTEIN_TIP = 'Have ~25 g protein in the next 2 hours to recover tw
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
-/** "Bench press: 82.5 kg" style line for a new personal best. */
+/** "Bench Press: 82.5 kg (was 80)" for weight, "Bench Press: est. 1RM 95 kg" for e1rm. */
 export function bestLine(b: PersonalBest): string {
-  const name = b.exercise ?? 'Exercise';
-  if (typeof b.one_rep_max_kg === 'number') return `${name}: est. 1RM ${round1(b.one_rep_max_kg)} kg`;
-  if (typeof b.weight_kg === 'number') return `${name}: ${round1(b.weight_kg)} kg`;
-  return name;
+  if (b.kind === 'e1rm') return `${b.exercise_name}: est. 1RM ${round1(b.value)} kg`;
+  const was = b.previous != null ? ` (was ${round1(b.previous)})` : '';
+  return `${b.exercise_name}: ${round1(b.value)} kg${was}`;
 }
