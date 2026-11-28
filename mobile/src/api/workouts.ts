@@ -8,8 +8,14 @@ export const MUSCLE_GROUPS = [
   "arms",
   "core",
   "cardio",
+  "focus",
 ] as const;
 export type MuscleGroup = (typeof MUSCLE_GROUPS)[number];
+
+/** Groups logged by time only (one placeholder set), not by sets and reps. */
+export function isTimeOnly(group: MuscleGroup): boolean {
+  return group === "cardio" || group === "focus";
+}
 
 export type Exercise = {
   id: string;

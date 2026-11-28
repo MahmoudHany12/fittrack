@@ -1,4 +1,5 @@
 import { authedRequest } from './client';
+import type { Progression } from './progression';
 
 export type StatusKey = 'well_rested' | 'okay' | 'tired' | 'no_data';
 export type Trend = 'up' | 'flat' | 'down';
@@ -32,6 +33,8 @@ export type Dashboard = {
     measured_at: string | null;
   } | null;
   workout_window?: { minutes_today: number; goal_minutes: number; fraction: number } | null;
+  /** Workout windows, levels, daily ring and hints (docs/progression.md). Absent on older APIs. */
+  progression?: Progression | null;
   stats: { strength: StatEntry; cardio: StatEntry; focus: StatEntry } | null;
 };
 

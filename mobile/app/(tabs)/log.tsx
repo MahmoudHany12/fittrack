@@ -9,6 +9,8 @@ const ITEMS = [
   { href: '/add/sleep', label: 'Sleep' },
   { href: '/add/weight', label: 'Weight' },
   { href: '/add/body', label: 'Body scan (InBody)' },
+  { href: '/program', label: "Today's program" },
+  { href: '/records', label: 'Personal bests' },
 ] as const;
 
 export default function Log() {

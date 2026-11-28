@@ -1,14 +1,17 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
+import { parsePrefill } from '@/api/program';
+import { PROTEIN_TIP, REST_MESSAGE, bestLine, getProgression, type PersonalBest } from '@/api/progression';
 import {
   LIMITS,
   MUSCLE_GROUPS,
   clamp,
   createExercise,
+  isTimeOnly,
   listWorkouts,
   newId,
   searchExercises,
@@ -88,6 +91,35 @@ function Chip({ label, onPress, active }: { label: string; onPress: () => void; 
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+/** Shown after saving: rest advice, the protein tip and any new personal bests. */
+function SavedPanel({ bests, onDone }: { bests: PersonalBest[]; onDone: () => void }) {
+  const t = useTheme();
+  return (
+    <Card>
+      <View style={{ gap: spacing(1.5) }}>
+        <Text
+          accessibilityRole="header"
+          style={{ color: t.text, fontSize: fontSizes.cardTitle, fontWeight: '700' }}
+        >
+          {REST_MESSAGE}
+        </Text>
+        <Body muted>{PROTEIN_TIP}</Body>
+        {bests.length > 0 ? (
+          <View style={{ gap: spacing(0.5) }}>
+            <Text style={{ color: t.accent, fontSize: fontSizes.body, fontWeight: '600' }}>
+              New personal best
+            </Text>
+            {bests.map((b, i) => (
+              <Caption key={i}>{bestLine(b)}</Caption>
+            ))}
+          </View>
+        ) : null}
+        <Button title="Done" onPress={onDone} />
+      </View>
+    </Card>
+  );
+}
+
 export default function AddWorkout() {
   const t = useTheme();
   const router = useRouter();
@@ -96,9 +128,13 @@ export default function AddWorkout() {
   const workoutId = useRef(newId());
 
   const [search, setSearch] = useState('');
-  const [entries, setEntries] = useState<Entry[]>([]);
+  // null until the user edits; until then the program prefill (if any) is shown.
+  const [edited, setEdited] = useState<Entry[] | null>(null);
   const [durationMin, setDurationMin] = useState(30);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [bests, setBests] = useState<PersonalBest[]>([]);
+  const params = useLocalSearchParams<{ program?: string }>();
 
   const query = search.trim();
   const results = useQuery({
@@ -128,6 +164,47 @@ export default function AddWorkout() {
     const byId = new Map(catalog.map((e) => [e.id, e]));
     return recentIds.map((id) => byId.get(id)).filter((e): e is Exercise => !!e);
   }, [catalog, recentIds]);
+
+  // "Start" on the program screen opens this form with today's session filled in.
+  const prefill = useMemo<Entry[]>(() => {
+    if (!params.program || !results.data) return [];
+    const byId = new Map(results.data.map((e) => [e.id, e]));
+    const byName = new Map(results.data.map((e) => [e.name.toLowerCase(), e]));
+    const next: Entry[] = [];
+    for (const p of parsePrefill(params.program)) {
+      const exercise = (p.id ? byId.get(p.id) : undefined) ?? byName.get(p.name.toLowerCase());
+      if (!exercise || next.some((n) => n.exercise.id === exercise.id)) continue;
+      const kg = p.kg > 0 ? p.kg : (lastSet.get(exercise.id)?.weight ?? DEFAULT_SET.weight);
+      next.push({
+        exercise,
+        sets: Array.from({ length: Math.max(1, Math.min(LIMITS.maxSets, p.sets)) }, () => ({
+          reps: clamp(p.reps, LIMITS.reps.min, LIMITS.reps.max),
+          weight: kg,
+        })),
+      });
+    }
+    return next;
+  }, [params.program, results.data, lastSet]);
+  const entries = edited ?? prefill;
+  const setEntries = (update: Entry[] | ((prev: Entry[]) => Entry[])) =>
+    setEdited((prev) => (typeof update === 'function' ? update(prev ?? prefill) : update));
+
+  // After a save, look once for personal bests (the save itself is queued for sync).
+  useEffect(() => {
+    if (!saved) return;
+    let live = true;
+    const look = setTimeout(() => {
+      getProgression()
+        .then((p) => live && setBests(p.new_personal_bests ?? []))
+        .catch(() => {});
+    }, 2500);
+    const leave = setTimeout(() => goBack(router), 8000);
+    return () => {
+      live = false;
+      clearTimeout(look);
+      clearTimeout(leave);
+    };
+  }, [saved, router]);
 
   const shown = query ? catalog.slice(0, 6) : [];
   const exactMatch = catalog.some((e) => e.name.toLowerCase() === query.toLowerCase());
@@ -173,7 +250,7 @@ export default function AddWorkout() {
     setEntries((prev) =>
       prev
         .map((e, i) => (i === ei ? { ...e, sets: e.sets.filter((_, j) => j !== si) } : e))
-        .filter((e) => e.exercise.muscle_group === 'cardio' || e.sets.length > 0),
+        .filter((e) => isTimeOnly(e.exercise.muscle_group) || e.sets.length > 0),
     );
   }
 
@@ -183,9 +260,9 @@ export default function AddWorkout() {
         id: workoutId.current,
         started_at: new Date().toISOString(),
         duration_s: clamp(durationMin * 60, LIMITS.duration_s.min, LIMITS.duration_s.max),
-        // Cardio has no sets to count; a single placeholder set keeps it in the log.
+        // Cardio and focus have no sets to count; a single placeholder set keeps them in the log.
         sets: entries.flatMap((e) =>
-          e.exercise.muscle_group === 'cardio'
+          isTimeOnly(e.exercise.muscle_group)
             ? [{ exercise_id: e.exercise.id, reps: 1, weight_kg: 0 }]
             : e.sets.map((s) => ({
                 exercise_id: e.exercise.id,
@@ -196,7 +273,8 @@ export default function AddWorkout() {
       }),
     onSuccess: () => {
       refreshAfterSave(queryClient, ['workouts']);
-      goBack(router);
+      void queryClient.invalidateQueries({ queryKey: ['progression'] });
+      setSaved(true);
     },
     onError: (e) =>
       setError(
@@ -211,6 +289,15 @@ export default function AddWorkout() {
     }
     setError(null);
     save.mutate();
+  }
+
+  if (saved) {
+    return (
+      <Screen>
+        <Title>Log workout</Title>
+        <SavedPanel bests={bests} onDone={() => goBack(router)} />
+      </Screen>
+    );
   }
 
   return (
@@ -271,7 +358,7 @@ export default function AddWorkout() {
         />
 
         {entries.map((entry, ei) => {
-          const cardio = entry.exercise.muscle_group === 'cardio';
+          const cardio = isTimeOnly(entry.exercise.muscle_group);
           return (
             <Card key={entry.exercise.id}>
               <View style={{ gap: spacing(1.5) }}>
