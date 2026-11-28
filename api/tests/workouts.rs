@@ -512,6 +512,42 @@ async fn exercise_search_and_custom(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn exercises_without_query_returns_full_catalog_in_order(pool: PgPool) {
+    let app = router(pool);
+    let t = register(&app, "ann@example.com").await;
+    let (s, mine) = call(
+        &app,
+        Method::POST,
+        "/exercises",
+        Some(json!({ "name": "Ann's Special", "muscle_group": "core" })),
+        Some(&t),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{mine}");
+
+    let (s, all) = call(&app, Method::GET, "/exercises", None, Some(&t)).await;
+    assert_eq!(s, StatusCode::OK);
+    let list = all.as_array().unwrap();
+    assert!(list.len() > 150, "catalog too small: {}", list.len());
+    assert!(list.len() <= 500);
+    assert!(list.iter().any(|e| e["name"] == "Bench Press"));
+    assert!(list.iter().any(|e| e["name"] == "Jump Rope"));
+    assert!(list.iter().any(|e| e["name"] == "Ann's Special"));
+    let keys: Vec<(&str, &str)> = list
+        .iter()
+        .map(|e| {
+            (
+                e["muscle_group"].as_str().unwrap(),
+                e["name"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    for pair in keys.windows(2) {
+        assert!(pair[0].0 <= pair[1].0, "not grouped: {pair:?}");
+    }
+}
+
+#[sqlx::test]
 async fn custom_exercise_validation(pool: PgPool) {
     let app = router(pool);
     let t = register(&app, "ann@example.com").await;

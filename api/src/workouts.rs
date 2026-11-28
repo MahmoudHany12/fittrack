@@ -116,8 +116,8 @@ async fn list_exercises(
         "SELECT id, name, muscle_group, (owner_id IS NOT NULL) AS custom
          FROM exercises
          WHERE (owner_id IS NULL OR owner_id = $1) AND name ILIKE $2 ESCAPE '\\'
-         ORDER BY name
-         LIMIT 200",
+         ORDER BY muscle_group, name
+         LIMIT 500",
     )
     .bind(user_id)
     .bind(pattern)
