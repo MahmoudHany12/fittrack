@@ -16,7 +16,7 @@ Stack: Rust (Axum, SQLx runtime-checked queries, Postgres, Argon2id, JWT) + Expo
 - `profiles(user_id, display_name, calorie_target, weight_goal_kg, units)`.
 - `exercises(id, name, muscle_group, source)` — seeded catalog; users may add custom (`owner_id`).
 - `workouts(id, user_id, started_at, duration_s, note, source[manual|health], external_id, updated_at, deleted_at)`; `workout_sets(id, workout_id, exercise_id, reps, weight_kg, position)`.
-- `foods(id, name, brand, kcal, protein_g, carbs_g, fat_g, serving_g, source[usda|off|custom], external_id, owner_id)`; `food_logs(id, user_id, food_id, logged_at, servings, kcal, protein_g, carbs_g, fat_g, updated_at, deleted_at)`; `favorite_foods(user_id, food_id)`.
+- `foods(id, name, brand, kcal, protein_g, carbs_g, fat_g, serving_g, source[usda|off|custom|builtin], external_id, owner_id, category, name_ar)` — `builtin` rows are the seeded catalog (`external_id = 'builtin:<slug>'`, no owner); `food_logs(id, user_id, food_id, logged_at, servings, kcal, protein_g, carbs_g, fat_g, updated_at, deleted_at)`; `favorite_foods(user_id, food_id)`.
 - `sleep_logs(id, user_id, bedtime, wake_time, quality 1-5, source, external_id, updated_at, deleted_at)`.
 - `weight_logs(id, user_id, measured_at, kg, updated_at, deleted_at)`.
 - `health_samples(user_id, category[steps|workouts|sleep], external_id, ...)` — dedupe key `(user_id, category, external_id)`; `health_consents(user_id, category, granted, updated_at)`.
@@ -26,7 +26,7 @@ Stack: Rust (Axum, SQLx runtime-checked queries, Postgres, Argon2id, JWT) + Expo
 Auth: `POST /auth/register|login|refresh|logout`, `GET /me`.
 Profile: `GET/PUT /profile`.
 Workouts: `GET /workouts?from&to`, `POST /workouts`, `PUT/DELETE /workouts/{id}`; `GET /exercises?q=`.
-Food: `GET /foods/search?q=` (local + USDA + OFF), `POST /foods`, `GET/POST/DELETE /food-logs`, `GET/PUT/DELETE /favorites`.
+Food: `GET /foods/search?q=` (custom, then built-in catalog, then USDA + OFF; English or Arabic), `GET /foods/catalog?category=`, `GET /foods/categories`, `POST /foods`, `GET/POST/DELETE /food-logs`, `GET/PUT/DELETE /favorites`.
 Sleep: `GET/POST /sleep`, `PUT/DELETE /sleep/{id}`. Weight: `GET/POST /weight`.
 Dashboard: `GET /dashboard` (calories remaining, last night's sleep + status word, readiness, weight trend).
 Health: `PUT /health/consents`, `POST /health/import` (batch, idempotent).
