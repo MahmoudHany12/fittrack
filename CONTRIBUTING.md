@@ -20,3 +20,6 @@
 - No secrets in the repo; use `.env.example`.
 - Check the license of any library or code before reuse (see `docs/decisions.md`). Do not copy AGPL code (e.g. wger) into this repo.
 - Use original names, art and colors only.
+
+## Who can merge
+Only the repository owner (@MahmoudHany12) can approve and merge pull requests; there are no other collaborators. `main`, `develop`, `release/v1` and `release/v2` are protected: changes go through a pull request, the `ci-ok` check must pass, open review conversations must be resolved, and force-pushes and branch deletion are blocked. Workflows from outside contributors' pull requests wait for the owner's approval before they run.
