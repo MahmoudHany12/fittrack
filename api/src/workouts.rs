@@ -4,7 +4,7 @@
 //! reported as 404 so ids cannot be probed. Creating with a client supplied
 //! `id` is idempotent for its owner and never touches another user's row.
 
-use crate::{auth::AuthUser, error::AppError, extract::ValidatedJson, AppState};
+use crate::{auth::AuthUser, error::AppError, extract::ValidatedJson, records, AppState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -68,7 +68,7 @@ fn invalid(field: &str, code: &'static str) -> WorkoutError {
 
 // ---------- exercises ----------
 
-const MUSCLE_GROUPS: [&str; 7] = [
+const MUSCLE_GROUPS: [&str; 8] = [
     "chest",
     "back",
     "legs",
@@ -76,6 +76,7 @@ const MUSCLE_GROUPS: [&str; 7] = [
     "arms",
     "core",
     "cardio",
+    "focus",
 ];
 
 #[derive(Serialize, FromRow)]
@@ -255,6 +256,14 @@ pub struct Workout {
     sets: Vec<WorkoutSet>,
 }
 
+/// Create/update response: the workout plus the personal bests it set.
+#[derive(Serialize)]
+pub struct WorkoutSaved {
+    #[serde(flatten)]
+    workout: Workout,
+    personal_bests: Vec<records::PersonalBest>,
+}
+
 const WORKOUT_COLS: &str =
     "id, started_at, duration_s, note, kind, source, external_id, updated_at";
 
@@ -401,11 +410,24 @@ async fn replace_sets(
     Ok(())
 }
 
+/// Personal bests set by this workout; empty when the `stats` flag is off.
+async fn new_personal_bests(
+    state: &AppState,
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    workout_id: Uuid,
+) -> Result<Vec<records::PersonalBest>, sqlx::Error> {
+    if !state.config.feature("stats") {
+        return Ok(Vec::new());
+    }
+    records::workout_personal_bests(conn, user_id, workout_id).await
+}
+
 async fn create_workout(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     ValidatedJson(body): ValidatedJson<WorkoutInput>,
-) -> Result<(StatusCode, Json<Workout>), WorkoutError> {
+) -> Result<(StatusCode, Json<WorkoutSaved>), WorkoutError> {
     let id = body.id.unwrap_or_else(Uuid::new_v4);
     let mut tx = state.pool.begin().await?;
     check_exercises(&mut tx, user_id, &body.sets).await?;
@@ -434,13 +456,20 @@ async fn create_workout(
     let existed = existed.ok_or(WorkoutError::NotFound)?;
     replace_sets(&mut tx, id, &body.sets).await?;
     let workout = fetch_workout(&mut tx, user_id, id).await?;
+    let personal_bests = new_personal_bests(&state, &mut tx, user_id, id).await?;
     tx.commit().await?;
     let status = if existed {
         StatusCode::OK
     } else {
         StatusCode::CREATED
     };
-    Ok((status, Json(workout)))
+    Ok((
+        status,
+        Json(WorkoutSaved {
+            workout,
+            personal_bests,
+        }),
+    ))
 }
 
 async fn update_workout(
@@ -448,7 +477,7 @@ async fn update_workout(
     AuthUser(user_id): AuthUser,
     Path(id): Path<Uuid>,
     ValidatedJson(body): ValidatedJson<WorkoutInput>,
-) -> Result<Json<Workout>, WorkoutError> {
+) -> Result<Json<WorkoutSaved>, WorkoutError> {
     let mut tx = state.pool.begin().await?;
     let updated = sqlx::query(
         "UPDATE workouts
@@ -470,8 +499,12 @@ async fn update_workout(
     check_exercises(&mut tx, user_id, &body.sets).await?;
     replace_sets(&mut tx, id, &body.sets).await?;
     let workout = fetch_workout(&mut tx, user_id, id).await?;
+    let personal_bests = new_personal_bests(&state, &mut tx, user_id, id).await?;
     tx.commit().await?;
-    Ok(Json(workout))
+    Ok(Json(WorkoutSaved {
+        workout,
+        personal_bests,
+    }))
 }
 
 async fn delete_workout(
