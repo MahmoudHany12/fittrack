@@ -127,13 +127,14 @@ fn names(b: &Value) -> Vec<String> {
         .collect()
 }
 
-async fn seed_workout(pool: &PgPool, user: &User, sets: i32) {
+async fn seed_workout(pool: &PgPool, user: &User, days_ago: i32, sets: i32) {
     let uid: Uuid = user.id.parse().unwrap();
     let wid: Uuid = sqlx::query_scalar(
         "INSERT INTO workouts (user_id, started_at, duration_s) \
-         VALUES ($1, now() - interval '1 day', 3600) RETURNING id",
+         VALUES ($1, now() - $2::int * interval '1 day', 3600) RETURNING id",
     )
     .bind(uid)
+    .bind(days_ago)
     .fetch_one(pool)
     .await
     .unwrap();
@@ -141,7 +142,7 @@ async fn seed_workout(pool: &PgPool, user: &User, sets: i32) {
         sqlx::query(
             "INSERT INTO workout_sets (workout_id, exercise_id, reps, weight_kg, position) \
              SELECT $1, id, 8, 50, $2 FROM exercises \
-             WHERE muscle_group <> 'cardio' AND owner_id IS NULL LIMIT 1",
+             WHERE muscle_group NOT IN ('cardio', 'focus') AND owner_id IS NULL LIMIT 1",
         )
         .bind(wid)
         .bind(i)
@@ -240,8 +241,11 @@ async fn ranking_order_and_no_stats_last(pool: PgPool) {
     for u in [&ann, &bob, &cy] {
         optin(&app, u, true).await;
     }
-    seed_workout(&pool, &cy, 12).await;
-    seed_workout(&pool, &bob, 2).await;
+    // Cy trained every other day (five on-time sessions), Bob once.
+    for d in [9, 7, 5, 3, 1] {
+        seed_workout(&pool, &cy, d, 3).await;
+    }
+    seed_workout(&pool, &bob, 1, 2).await;
     let (_, b) = board(&app, &ann).await;
     let rows = b.as_array().unwrap();
     assert_eq!(rows.len(), 3);

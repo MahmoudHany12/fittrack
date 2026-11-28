@@ -230,8 +230,11 @@ async fn new_sections_are_present_on_an_empty_account(pool: PgPool) {
     assert_eq!(d["body"]["trend"], "flat");
     assert_eq!(d["workout_window"]["minutes_today"], 0);
     assert_eq!(d["workout_window"]["goal_minutes"], 30);
-    assert_eq!(d["workout_window"]["fraction"], 0.0);
+    // With the stats flag on the window follows the cardio track: a new user's window is open.
+    assert_eq!(d["workout_window"]["fraction"], 1.0);
     assert!(d["stats"].is_object(), "{d}");
+    assert_eq!(d["progression"]["tracks"]["cardio"]["state"], "open");
+    assert_eq!(d["progression"]["ring"]["closed"], false);
 }
 
 #[sqlx::test]
@@ -284,7 +287,14 @@ async fn dashboard_uses_computed_target_scan_and_workout_window(pool: PgPool) {
     assert_eq!(d["body"]["skeletal_muscle_kg"], 35.0);
     assert!(d["body"]["measured_at"].is_string());
     assert_eq!(d["workout_window"]["minutes_today"], 30);
-    assert_eq!(d["workout_window"]["fraction"], 1.0);
+    // The workout counts for cardio (no sets): the track is recovering, so the window
+    // fraction is the (tiny) recovery progress, and the ring is closed.
+    assert_eq!(
+        d["progression"]["tracks"]["cardio"]["state"], "recovering",
+        "{d}"
+    );
+    assert!(d["workout_window"]["fraction"].as_f64().unwrap() < 0.05);
+    assert_eq!(d["progression"]["ring"]["closed"], true);
 }
 
 #[sqlx::test]

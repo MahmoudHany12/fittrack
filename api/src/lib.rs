@@ -11,7 +11,10 @@ pub mod friends;
 pub mod health;
 pub mod leaderboard;
 pub mod profile;
+pub mod program;
+pub mod progression;
 pub mod readiness;
+pub mod records;
 pub mod sleep;
 pub mod stats;
 pub mod summary;
@@ -44,6 +47,9 @@ pub fn app(state: AppState) -> Router {
         .merge(sync::routes())
         .merge(summary::routes())
         .merge(stats::routes())
+        .merge(progression::routes())
+        .merge(records::routes())
+        .merge(program::routes())
         .merge(chat::routes())
         .merge(leaderboard::routes())
         .merge(health::routes())
